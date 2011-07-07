@@ -1,0 +1,5 @@
+*.sw[po]
+^\.git/
+*.bak
+*.old
+.DS_Store
