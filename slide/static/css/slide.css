@@ -1,27 +1,21 @@
 .slide {
-    color: #333;
-    margin: 100px;
+    margin: 125px 100px;
     font-size: 500%;
-}
-.slide p, pre, table {
-    margin: 0.6em 0;
-}
-.slide ul {
-    margin: 0.6em 0 60px 60px;
 }
 .slide pre {
     font-size: 60%;
     white-space: pre-wrap;
-    padding: 0.5em !important;
+    padding: 0.5em;
 }
-.slide td {
-    border: 3px solid #ccc;
-    padding: 5px 20px;
-    text-align: center;
-}
-.slide thead td {
-    background: #eee;
+.slide h1 {
     font-weight: bold;
+}
+.slide h1 + ul {
+    color: #666;
+    text-align: right;
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
 }
 .slide h2 {
     background: #eee;
@@ -33,12 +27,10 @@
     text-align: center;
     margin-top: -90px;
 }
-.title p {
-    color: #666;
-    text-align: right;
-}
-.line {
+.slide em {
     background: #eee;
+    padding: 0.2em;
+    font-style: normal;
 }
 
 .nav-pager {

@@ -3,34 +3,37 @@
 <head>
     <meta charset="utf-8" />
     <title></title>
-    <link rel="stylesheet" type="text/css" href="static/css/reset.css" />
-    <link rel="stylesheet" type="text/css" href="static/css/slide.css" />
-    <link rel="stylesheet" type="text/css" href="static/css/prettify.css" />
+    <link rel="stylesheet" href="static/css/screen.css" type="text/css" media="screen, projection" />
+    <link rel="stylesheet" href="static/css/prettify.css" type="text/css" />
+    <link rel="stylesheet" href="static/css/slide.css" type="text/css" />
     <script type="text/javascript" src="static/js/jquery-1.6.2.min.js"></script>
     <script type="text/javascript" src="static/js/jquery.presentation.js"></script>
     <script type="text/javascript" src="static/js/prettify/prettify.js"></script>
 </head>
 <body>
     <div id="slides">
-        <div class="slide title">
-            <h1>title</h1>
-            <p>:)</p>
+        <div class="slide">
+<h1 id="title">title</h1>
+
+<ul>
+<li>:)</li>
+</ul>
         </div>
         <div class="slide">
-            <h2>foo</h2>
+<h2 id="foo">foo</h2>
         </div>
         <div class="slide">
-            <p>bar</p>
+<p>bar</p>
         </div>
         <div class="slide">
-            <ul>
-                <li>A</li>
-                <li>B</li>
-                <li>C</li>
-            </ul>
+<ul>
+<li>A</li>
+<li>B</li>
+<li>C</li>
+</ul>
         </div>
         <div class="slide">
-            <pre class="prettyprint"><code>use strict;
+<pre><code>use strict;
 use warnings;
 </code></pre>
         </div>
@@ -38,6 +41,7 @@ use warnings;
     <script>
 $(function () {
     $(document).ready(function () {
+        $('pre').addClass('prettyprint');
         prettyPrint();
     });
 
