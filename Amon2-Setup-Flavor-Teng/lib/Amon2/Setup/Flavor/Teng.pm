@@ -3,12 +3,10 @@ use warnings;
 use utf8;
 
 package Amon2::Setup::Flavor::Teng;
-use parent qw(Amon2::Setup::Flavor::Basic);
+use parent qw/Amon2::Setup::Flavor/;
 
 sub run {
     my $self = shift;
-
-    $self->SUPER::run();
 
     $self->write_file('lib/<<PATH>>.pm', <<'...');
 package <% $module %>;
@@ -102,3 +100,16 @@ WriteMakefile(
 }
 
 1;
+__END__
+
+=head1 NAME
+
+Amon2::Setup::Flavor::Teng - Teng flavor for Amon2
+
+=head1 SYNOPSIS
+
+    % amon2-setup.pl --flavor=Basic --flavor=Teng MyApp
+
+=head1 DESCRIPTION
+
+This is a flavor for project using Teng.
