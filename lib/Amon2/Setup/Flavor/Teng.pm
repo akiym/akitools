@@ -83,7 +83,7 @@ WriteMakefile(
     VERSION_FROM  => 'lib/<% $path %>.pm',
     PREREQ_PM     => {
         'Amon2'                           => '<% $amon2_version %>',
-        'Amon2::Plugin::DBI'              => '0.05',
+        'Amon2::DBI'                      => '0.05',
         'Text::Xslate'                    => '1.1005',
         'Text::Xslate::Bridge::TT2Like'   => '0.00008',
         'Plack::Middleware::ReverseProxy' => '0.09',
