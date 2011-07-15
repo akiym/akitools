@@ -13,7 +13,7 @@ my $content = do {
 };
 
 my @slides = map { markdown($_) } split /\n\n\n/, $content;
-my ($title) = $slides[0] =~ m!<h1>(.*?)</h1>!;
+my ($title) = $slides[0] =~ m!<h1\s*[\w="]*>(.*?)</h1>!;
 
 my $tx = Text::Xslate->new();
 print $tx->render_string(get_data_section('slide.tx'), {
