@@ -12,7 +12,7 @@ my $content = do {
     local $/; <$fh>
 };
 
-my @slides = map { markdown($_) } split /\n\n\n/, $content;
+my @slides = map { markdown($_) } split /----\n/, $content;
 my ($title) = $slides[0] =~ m!<h1\s*[\w="]*>(.*?)</h1>!;
 
 my $tx = Text::Xslate->new;
@@ -41,10 +41,10 @@ __DATA__
 <head>
     <meta charset="utf-8" />
     <title><: $title :></title>
-    <link rel="stylesheet" href="../static/css/bootstrap.min.css" type="text/css" />
-    <link rel="stylesheet" href="../static/css/slide.css" type="text/css" />
-    <script type="text/javascript" src="../static/js/jquery-1.6.2.min.js"></script>
-    <script type="text/javascript" src="../static/js/jquery.presentation.js"></script>
+    <link rel="stylesheet" href="static/css/reset.css" type="text/css" />
+    <link rel="stylesheet" href="static/css/slide.css" type="text/css" />
+    <script type="text/javascript" src="static/js/jquery-1.6.2.min.js"></script>
+    <script type="text/javascript" src="static/js/jquery.presentation.js"></script>
 </head>
 <body>
     <div id="slides">
