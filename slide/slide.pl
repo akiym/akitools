@@ -3,9 +3,15 @@ use warnings;
 use Text::Xslate;
 use Text::MultiMarkdown qw/markdown/;
 use Data::Section::Simple qw/get_data_section/;
+use File::Basename;
+use File::Find::Rule;
+use File::Spec;
 use Pod::Usage;
 
 my $file = shift or pod2usage(0);
+
+my ($static) = File::Find::Rule->directory->name('static')->in('.', '..');
+$static = File::Spec->catfile(dirname($file), $static);
 
 my $content = do {
     open my $fh, '<', $file or die $!;
@@ -19,6 +25,7 @@ my $tx = Text::Xslate->new;
 print $tx->render_string(get_data_section('slide.tx'), {
     title  => $title,
     slides => \@slides,
+    static => $static,
 });
 
 __END__
@@ -41,10 +48,10 @@ __DATA__
 <head>
     <meta charset="utf-8" />
     <title><: $title :></title>
-    <link rel="stylesheet" href="static/css/reset.css" type="text/css" />
-    <link rel="stylesheet" href="static/css/slide.css" type="text/css" />
-    <script type="text/javascript" src="static/js/jquery-1.6.2.min.js"></script>
-    <script type="text/javascript" src="static/js/jquery.presentation.js"></script>
+    <link rel="stylesheet" href="<: $static :>/css/reset.css" type="text/css" />
+    <link rel="stylesheet" href="<: $static :>/css/slide.css" type="text/css" />
+    <script type="text/javascript" src="<: $static :>/js/jquery-1.6.2.min.js"></script>
+    <script type="text/javascript" src="<: $static :>/js/jquery.presentation.js"></script>
 </head>
 <body>
     <div id="slides">
