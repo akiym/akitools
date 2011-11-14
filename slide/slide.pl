@@ -11,7 +11,7 @@ use Pod::Usage;
 my $file = shift or pod2usage(0);
 
 my ($static) = File::Find::Rule->directory->name('static')->in('.', '..');
-$static = File::Spec->catfile(dirname($file), $static);
+$static = File::Spec->catdir(dirname($file), $static);
 
 my $content = do {
     open my $fh, '<', $file or die $!;
