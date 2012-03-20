@@ -1,31 +1,37 @@
+#!perl
 use strict;
 use warnings;
 use Text::Xslate;
-use Text::MultiMarkdown qw/markdown/;
+use Text::Markdown qw/markdown/;
 use Data::Section::Simple qw/get_data_section/;
-use File::Basename;
-use File::Find::Rule;
-use File::Spec;
+use File::Zglob;
+use Getopt::Long;
 use Pod::Usage;
 
-my $file = shift or pod2usage(0);
-
-my ($static) = File::Find::Rule->directory->name('static')->in('.', '..');
-$static = File::Spec->catdir(dirname($file), $static);
+my $slide = shift or pod2usage("Missing filename\n");
+my $static_dir;
+GetOptions(
+    'dir=s'  => \$static_dir,
+    'h|help' => \my $help,
+) or pod2usage(2);
+pod2usage(1) if $help;
+$static_dir = (zglob('**/static'))[0] unless $static_dir;
 
 my $content = do {
-    open my $fh, '<', $file or die $!;
-    local $/; <$fh>
+    open my $fh, '<', $slide or die $!;
+    local $/; <$fh>;
 };
 
 my @slides = map { markdown($_) } split /----\n/, $content;
 my ($title) = $slides[0] =~ m!<h1\s*[\w="]*>(.*?)</h1>!;
 
-my $tx = Text::Xslate->new;
-print $tx->render_string(get_data_section('slide.tx'), {
-    title  => $title,
-    slides => \@slides,
-    static => $static,
+my $tx = Text::Xslate->new({
+    path => [get_data_section()],
+});
+print $tx->render('slide.tx', {
+    slides     => \@slides,
+    title      => $title,
+    static_dir => $static_dir,
 });
 
 __END__
@@ -36,7 +42,7 @@ slide.pl - Slide generator written in Markdown
 
 =head1 SYNOPSIS
 
-    % slide.pl file
+    % slide.pl filename
 
 =cut
 
@@ -48,10 +54,10 @@ __DATA__
 <head>
     <meta charset="utf-8" />
     <title><: $title :></title>
-    <link rel="stylesheet" href="<: $static :>/css/reset.css" type="text/css" />
-    <link rel="stylesheet" href="<: $static :>/css/slide.css" type="text/css" />
-    <script type="text/javascript" src="<: $static :>/js/jquery-1.6.2.min.js"></script>
-    <script type="text/javascript" src="<: $static :>/js/jquery.presentation.js"></script>
+    <link rel="stylesheet" href="<: $static_dir :>/css/reset.css" type="text/css" />
+    <link rel="stylesheet" href="<: $static_dir :>/css/slide.css" type="text/css" />
+    <script type="text/javascript" src="<: $static_dir :>/js/jquery-1.6.2.min.js"></script>
+    <script type="text/javascript" src="<: $static_dir :>/js/jquery.presentation.js"></script>
 </head>
 <body>
     <div id="slides">
