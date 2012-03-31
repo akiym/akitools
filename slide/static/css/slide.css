@@ -44,6 +44,7 @@ body {
     border: 3px solid #ccc;
     font-size: 60%;
     white-space: pre-wrap;
+    overflow: auto;
     margin-bottom: 50px;
     padding: 0.5em;
 }
