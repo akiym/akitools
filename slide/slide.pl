@@ -9,13 +9,15 @@ use Getopt::Long;
 use Pod::Usage;
 
 my $slide = shift or pod2usage("Missing filename\n");
-my $static_dir;
+my $static_dir = 'static';
+if (my $dir = (zglob('**/static'))[0]) {
+    $static_dir = $dir;
+}
 GetOptions(
     'dir=s'  => \$static_dir,
     'h|help' => \my $help,
 ) or pod2usage(2);
 pod2usage(1) if $help;
-$static_dir = (zglob('**/static'))[0] unless $static_dir;
 
 my $content = do {
     open my $fh, '<', $slide or die $!;
