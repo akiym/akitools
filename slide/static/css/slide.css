@@ -37,7 +37,12 @@ body {
 .slide em {
     background: #eee;
     padding: 0.2em;
-    font-style: normal;
+}
+.slide strong {
+    color: #eee;
+    background: #333;
+    padding: 0.2em;
+    font-weight: bold;
 }
 .slide pre {
     background: #eee;
@@ -47,6 +52,16 @@ body {
     overflow: auto;
     margin-bottom: 50px;
     padding: 0.5em;
+}
+.slide blockquote {
+    border-top: 3px solid #ccc;
+    border-bottom: 3px solid #ccc;
+    font-size: 60%;
+    margin-bottom: 50px;
+    padding: 0.5em;
+}
+.slide blockquote p {
+    margin: 0;
 }
 
 .nav-pager {
