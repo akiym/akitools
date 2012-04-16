@@ -1,6 +1,7 @@
 #!perl
 use strict;
 use warnings;
+use Encode;
 use Text::Xslate;
 use Text::Markdown qw/markdown/;
 use Data::Section::Simple qw/get_data_section/;
@@ -30,11 +31,12 @@ my ($title) = $slides[0] =~ m!<h1\s*[\w="]*>(.*?)</h1>!;
 my $tx = Text::Xslate->new({
     path => [get_data_section()],
 });
-print $tx->render('slide.tx', {
+my $html = $tx->render('slide.tx', {
     slides     => \@slides,
     title      => $title,
     static_dir => $static_dir,
 });
+print encode_utf8($html);
 
 __END__
 
