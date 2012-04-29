@@ -16,6 +16,7 @@ if (my $dir = (zglob('**/static'))[0]) {
 }
 GetOptions(
     'dir=s'  => \$static_dir,
+    'output' => \my $output,
     'h|help' => \my $help,
 ) or pod2usage(2);
 pod2usage(1) if $help;
@@ -36,7 +37,14 @@ my $html = $tx->render('slide.tx', {
     title      => $title,
     static_dir => $static_dir,
 });
-print encode_utf8($html);
+
+if ($output) {
+    (my $filename = $slide) =~ s/\..+$//;
+    open my $fh, '>:encoding(utf-8)', "$filename.html" or die $!;
+    print {$fh} $html;
+} else {
+    print encode_utf8($html);
+}
 
 __END__
 
@@ -47,6 +55,11 @@ slide.pl - Slide generator written in Markdown
 =head1 SYNOPSIS
 
     % slide.pl filename
+
+        --dir=dir   Directory that contains CSS, JavaScript files (default: "static")
+        --output
+
+        --help      Show this help
 
 =cut
 
