@@ -17,6 +17,7 @@ if (my $dir = (zglob('**/static'))[0]) {
 GetOptions(
     'dir=s'  => \$static_dir,
     'output' => \my $output,
+    'reload' => \my $reload,
     'h|help' => \my $help,
 ) or pod2usage(2);
 pod2usage(1) if $help;
@@ -45,6 +46,9 @@ if ($output) {
 } else {
     print encode_utf8($html);
 }
+if ($reload) {
+    system q{osascript -e 'tell application "Google Chrome" to reload active tab of window 1'};
+}
 
 __END__
 
@@ -58,6 +62,7 @@ slide.pl - Slide generator written in Markdown
 
         --dir=dir   Directory that contains CSS, JavaScript files (default: "static")
         --output
+        --reload    Reload with Google Chrome (Mac only)
 
         --help      Show this help
 
