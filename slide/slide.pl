@@ -28,7 +28,7 @@ my $content = do {
     local $/; <$fh>;
 };
 
-my @slides = map { markdown($_) } split /----\n/, $content;
+my @slides = map { markdown($_) } split /^----$/m, $content;
 my ($title) = $slides[0] =~ m!<h1\s*[\w="]*>(.*?)</h1>!;
 
 my $tx = Text::Xslate->new({
