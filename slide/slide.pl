@@ -79,8 +79,10 @@ __DATA__
     <title><: $title :></title>
     <link rel="stylesheet" href="<: $static_dir :>/css/reset.css" type="text/css" />
     <link rel="stylesheet" href="<: $static_dir :>/css/slide.css" type="text/css" />
+    <link rel="stylesheet" href="<: $static_dir :>/css/prettify.css" type="text/css" />
     <script type="text/javascript" src="<: $static_dir :>/js/jquery-1.6.2.min.js"></script>
     <script type="text/javascript" src="<: $static_dir :>/js/jquery.presentation.js"></script>
+    <script type="text/javascript" src="<: $static_dir :>/js/prettify.js"></script>
 </head>
 <body>
     <div id="slides">
@@ -91,6 +93,10 @@ __DATA__
     </div>
     <script>
 $(function () {
+    $(document).ready(function () {
+        $('pre').addClass('prettyprint');
+        prettyPrint();
+    });
     $('#slides').presentation();
 });
     </script>
