@@ -1,0 +1,17 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use File::Temp;
+
+my $src = do { local $/; <> };
+
+my $tmp = File::Temp->new(UNLINK => 0);
+print {$tmp} $src;
+
+system 'open', '-a', 'Google Chrome', $tmp->filename;
+
+__END__
+
+=head1 USAGE
+
+  % cat index.html | base64 -D | with-chrome
