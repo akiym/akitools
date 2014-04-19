@@ -1,0 +1,59 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+my $filename = shift or die "$0 filename\n";
+
+my $rodata = `objdump -sj .rodata $filename`;
+
+my @data;
+while ($rodata =~ m{
+    ^     \s+
+    ([0-9a-f]+) \s+ # address
+    (?: ([0-9a-f]+) \s+ )?
+    (?: ([0-9a-f]+) \s+ )?
+    (?: ([0-9a-f]+) \s+ )?
+    (?: ([0-9a-f]+)     )?
+}gxms) {
+    my @bytes = ($2, $3, $4, $5);
+    for (@bytes) {
+        next unless defined $_;
+        push @data, map { chr hex } ($_ =~ /([0-9a-f]{2})/g);
+    }
+}
+
+my ($start_addr) = $rodata =~ m/^ \s+ ([0-9a-f]+) \s+/xms;
+$start_addr = hex $start_addr;
+my $end_addr = $start_addr + scalar(@data) - 1;
+
+# I love intel flavor :)
+my $disas = `objdump -d -M intel $filename`;
+$disas =~ s{ 0x([0-9a-f]{1,8}) $ }{
+    my $addr = hex $1;
+    if ($start_addr <= $addr && $addr <= $end_addr) {
+        "0x$1\n" . '    # "' . get_string($addr - $start_addr) . '"';
+    } else {
+        "0x$1";
+    }
+}gexms;
+
+open my $fh, '>', "$filename.disas" or die $!;
+print {$fh} $disas;
+
+sub get_string {
+    my $i = shift;
+    my $string = '';
+    for my $j (0..100) {
+        my $c = $data[$i + $j];
+        if ($c ne "\0") { # null
+            if ($c =~ /[\x20-\x7e]/) {
+                $string .= $c;
+            } else {
+                $string .= sprintf '\x%02x', ord $c;
+            }
+        } else {
+            return $string;
+        }
+    }
+    return "$string...";
+}
