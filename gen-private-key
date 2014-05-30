@@ -1,0 +1,30 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Crypt::OpenSSL::Bignum;
+use Crypt::OpenSSL::RSA;
+
+my $n = shift;
+my $p = shift;
+my $q = shift or die "Usage: $0 n p q [e]\n";
+my $e = shift || 0x10001;
+$n = guess_dec_hex($n);
+$p = guess_dec_hex($p);
+$q = guess_dec_hex($q);
+$e = guess_dec_hex($e);
+
+$n = Crypt::OpenSSL::Bignum->new_from_decimal($n);
+$p = Crypt::OpenSSL::Bignum->new_from_decimal($p);
+$q = Crypt::OpenSSL::Bignum->new_from_decimal($q);
+$e = Crypt::OpenSSL::Bignum->new_from_decimal($e);
+
+my $rsa = Crypt::OpenSSL::RSA->new_key_from_parameters($n, $e, undef, $p, $q);
+print $rsa->get_private_key_string();
+
+sub guess_dec_hex {
+    my $n = shift;
+    if ($n =~ s/^0x//) {
+        $n = hex $n;
+    }
+    return $n;
+}
