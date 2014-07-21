@@ -1,0 +1,21 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+my $filename = shift;
+my $skip = shift;
+my $count = shift;
+my $out = shift or die "Usage: $0 filename 0x100 10 out\n";
+$skip = guess_number($skip);
+$count = guess_number($count);
+
+warn "$filename > $out: $skip-" . ($skip+$count) . "\n";
+system "dd if=$filename of=$out ibs=1 skip=$skip count=$count";
+
+sub guess_number {
+    my $n = shift;
+    if ($n =~ /^0x([0-9a-f]+)$/i) {
+        return hex $n;
+    }
+    return $n;
+}
