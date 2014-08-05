@@ -37,12 +37,30 @@ end_addr = get_end_of_procedure(procedure)
 for addr in range(begin_addr, end_addr+1):
     get_var_names(addr)
 
+def var_compare(x, y):
+    pattern = re.compile('var_(\d+)')
+    m = pattern.search(x)
+    n = pattern.search(y)
+    return cmp(int(m.group(1)), int(n.group(1)))
+
+def stack_compare(x, y):
+    pattern = re.compile('esp\+0x([0-9a-f]+)')
+    m = pattern.search(x)
+    n = pattern.search(y)
+    return cmp(int(m.group(1), 16), int(n.group(1), 16))
+
+def arg_compare(x, y):
+    pattern = re.compile('arg_offset_x([0-9a-f]+)')
+    m = pattern.search(x)
+    n = pattern.search(y)
+    return cmp(int(m.group(1), 16), int(n.group(1), 16))
+
 var_names = list(set(var_names))
-var_names.sort(reverse=True)
+var_names.sort(cmp=var_compare, reverse=True)
 stack_names = list(set(stack_names))
-stack_names.sort(reverse=True)
+stack_names.sort(cmp=stack_compare, reverse=True)
 arg_names = list(set(arg_names))
-arg_names.sort()
+arg_names.sort(cmp=arg_compare)
 
 comment = '\n'
 for name in var_names:
