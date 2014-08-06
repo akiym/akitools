@@ -58,14 +58,14 @@ def arg_compare(x, y):
 var_names = list(set(var_names))
 var_names.sort(cmp=var_compare)
 stack_names = list(set(stack_names))
-stack_names.sort(cmp=stack_compare, reverse=True)
+stack_names.sort(cmp=stack_compare)
 arg_names = list(set(arg_names))
 arg_names.sort(cmp=arg_compare)
 
 comment = '\n'
-for name in var_names:
-    comment += name + '\n'
 for name in stack_names:
+    comment += name + '\n'
+for name in var_names:
     comment += name + '\n'
 for name in arg_names:
     comment += name + '\n'
