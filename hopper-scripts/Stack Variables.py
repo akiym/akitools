@@ -66,7 +66,10 @@ comment = '\n'
 for name in stack_names:
     comment += name + '\n'
 for name in var_names:
-    comment += name + '\n'
+    pattern = re.compile('ebp-0x([0-9a-f]+)\+var_(\d+)')
+    m = pattern.search(name)
+    offset = int(m.group(2)) - int(m.group(1), 16)
+    comment += name + '= ' + str(offset) + '\n'
 for name in arg_names:
     comment += name + '\n'
 
