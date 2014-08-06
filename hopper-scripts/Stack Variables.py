@@ -56,7 +56,7 @@ def arg_compare(x, y):
     return cmp(int(m.group(1), 16), int(n.group(1), 16))
 
 var_names = list(set(var_names))
-var_names.sort(cmp=var_compare, reverse=True)
+var_names.sort(cmp=var_compare)
 stack_names = list(set(stack_names))
 stack_names.sort(cmp=stack_compare, reverse=True)
 arg_names = list(set(arg_names))
