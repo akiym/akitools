@@ -71,6 +71,9 @@ for name in var_names:
     offset = int(m.group(2)) - int(m.group(1), 16)
     comment += name + '= ' + str(offset) + '\n'
 for name in arg_names:
-    comment += name + '\n'
+    pattern = re.compile('arg_offset_x([0-9a-f]+)')
+    m = pattern.search(name)
+    offset = int(m.group(1), 16) + 8
+    comment += name + '= ' + str(offset) + '\n'
 
 seg.setCommentAtAddress(begin_addr, comment)
