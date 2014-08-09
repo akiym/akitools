@@ -1,0 +1,7 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+local $/;
+
+printf "\\x%02x", ord $_ for split //, <>;

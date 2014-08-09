@@ -1,0 +1,8 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+
+while (defined(my $line = <>)) {
+    my ($asm) = $line =~ /:\t((?:[0-9a-f]{2}\s+)+)\t/ or next;
+    print map { pack 'H2', $_ } split /\s+/, $asm;
+}
