@@ -1,0 +1,26 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use File::Spec;
+
+# Hopper disassembler command line tool wrapper
+
+my $HOPPER = '/Applications/Hopper Disassembler v3.app/Contents/MacOS/hopper';
+
+if (@ARGV == 1) {
+    my $filename = shift;
+    $filename = File::Spec->rel2abs($filename);
+    if ($filename =~ /\.hop$/) {
+        system $HOPPER, '-d', $filename;
+    } else {
+        system $HOPPER, '-e', $filename;
+    }
+} else {
+    my %argv = @ARGV;
+    for my $key (keys %argv) {
+        if ($key =~ /^-(?:e|executable|d|database)$/) {
+            $argv{$key} = File::Spec->rel2abs($argv{$key});
+        }
+    }
+    system $HOPPER, (%argv ? %argv : (''));
+}
