@@ -7,12 +7,12 @@ names = {
 }
 pattern = {
     'stack': re.compile('esp\+0x([0-9a-f]+)'),
-    'var': re.compile('ebp-0x([0-9a-f]+)\+var_(\d+)'),
+    'var': re.compile('ebp(?:-0x([0-9a-f]+))?\+var_([0-9A-F]+)'),
     'arg': re.compile('arg_offset_x([0-9a-f]+)'),
 }
 compare = {
     'stack': lambda x, y: cmp(int(pattern['stack'].search(x).group(1), 16), int(pattern['stack'].search(y).group(1), 16)),
-    'var': lambda x, y: cmp(int(pattern['var'].search(x).group(2)), int(pattern['var'].search(y).group(2))),
+    'var': lambda x, y: cmp(int(pattern['var'].search(x).group(2), 16), int(pattern['var'].search(y).group(2), 16)),
     'arg': lambda x, y: cmp(int(pattern['arg'].search(x).group(1), 16), int(pattern['arg'].search(y).group(1), 16)),
 }
 
@@ -53,7 +53,10 @@ for key in ['stack', 'var', 'arg']:
             comment += name + '\n'
         elif key == 'var':
             m = pattern[key].search(name)
-            offset = int(m.group(2)) - int(m.group(1), 16)
+            if m.group(1):
+                offset = int(m.group(2)) - int(m.group(1), 16)
+            else:
+                offset = int(m.group(2), 16)
             comment += name + '= ' + str(offset) + '\n'
         elif key == 'arg':
             m = pattern[key].search(name)
