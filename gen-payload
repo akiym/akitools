@@ -1,0 +1,58 @@
+#!/usr/bin/python
+import os
+import os.path
+import string
+import sys
+
+binary = ''
+arch = 'i386'
+
+if len(sys.argv) == 2:
+    binary = sys.argv[1]
+    machine = os.popen('readelf -h %s | grep Machine' % binary).read()
+    if machine.find('X86-64') > 0:
+        arch = 'amd64'
+    out = os.path.basename(binary) + '.py'
+else:
+    out = 'payload.py'
+
+template = string.Template("""# -*- coding: utf-8 -*-
+import os
+import sys
+import time
+import re
+from pwn import *
+
+context.arch = '$arch'
+context.log_level = DEBUG
+
+REMOTE = False
+
+if REMOTE:
+    host = ''
+    port = 0
+else:
+    host = '127.0.0.1'
+    port = 4000
+
+def connect():
+    return remote(host, port)
+    #return process('$binary')
+
+e = ELF('$binary')
+
+s = connect()
+
+payload = (
+)
+s.send(payload)
+
+s.interactive()
+"""
+)
+payload = template.substitute({'arch': arch, 'binary': binary})
+
+if os.path.exists(out):
+    sys.stderr.write('File exists: %s\n' % out)
+    sys.exit(1)
+open(out, 'w').write(payload)
