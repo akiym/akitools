@@ -74,6 +74,24 @@ class SocatCommand(gdb.Command):
 
         return result
 
+    def getarch(self):
+        """
+        Get architecture of debugged program
+
+        Returns:
+            - tuple of architecture info (arch (String), bits (Int))
+        """
+        arch = "unknown"
+        bits = 32
+        out = self.execute_redirect('maintenance info sections ?').splitlines()
+        for line in out:
+            if "file type" in line:
+                arch = line.split()[-1][:-1]
+                break
+        if "64" in arch:
+            bits = 64
+        return (arch, bits)
+
     # -----
 
     def invoke(self, arg, from_tty):
@@ -83,7 +101,11 @@ class SocatCommand(gdb.Command):
             port = 4000
         filename = self.getfile()
         gdb.execute('printf "socat: listening on :%d\n"' % port)
-        gdb.execute('exec-file socat')
+        gdb.execute('printf "socat: listening on :%d\n"' % port)
+        if bits == 32:
+            gdb.execute('exec-file socat_i386')
+        else:
+            gdb.execute('exec-file socat')
         gdb.execute('run tcp-l:%d,reuseaddr exec:%s' % (port, filename))
 
         gdb.execute('exec-file %s' % filename)
