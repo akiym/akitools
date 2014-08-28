@@ -6,8 +6,8 @@ names = {
     'arg': [],
 }
 pattern = {
-    'stack': re.compile('esp\+0x([0-9a-f]+)'),
-    'var': re.compile('ebp(?:-0x([0-9a-f]+))?\+var_([0-9A-F]+)'),
+    'stack': re.compile('[er]sp\+0x([0-9a-f]+)'),
+    'var': re.compile('[er]bp(?:-0x([0-9a-f]+))?\+var_([0-9A-F]+)'),
     'arg': re.compile('arg_(?:offset_x)?([0-9a-f]+)'),
 }
 compare = {
