@@ -3,11 +3,19 @@ use strict;
 use warnings;
 use Getopt::Long qw/:config posix_default no_ignore_case bundling permute/;
 
-my $str = shift or die "Usage: $0 str [slides]\n";
-
 GetOptions(
-    'a|all' => \my $all,
+    'a|all'    => \my $all,
+    'f|file=s' => \my $filename,
 ) or die;
+
+my $str = shift;
+if (defined $filename) {
+    $str = do {
+        open my $fh, '<', $filename or die $!;
+        local $/; <$fh>;
+    };
+}
+$str // die "Usage: $0 [-a -f FILE] STR [SLIDES]\n";
 
 my $slides = shift // 13;
 $slides %= 26;
