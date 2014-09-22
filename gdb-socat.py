@@ -102,7 +102,6 @@ class SocatCommand(gdb.Command):
         filename = self.getfile()
         arch, bits = self.getarch()
         gdb.execute('printf "socat: listening on :%d\n"' % port)
-        gdb.execute('printf "socat: listening on :%d\n"' % port)
         if bits == 32:
             gdb.execute('exec-file socat_i386')
         else:
