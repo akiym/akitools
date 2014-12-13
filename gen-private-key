@@ -1,6 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
+use bignum;
 use Crypt::OpenSSL::Bignum;
 use Crypt::OpenSSL::RSA;
 
