@@ -1,0 +1,81 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Getopt::Long qw/:config posix_default no_ignore_case bundling permute/;
+
+GetOptions(
+    'h|help' => \my $help,
+) or usage();
+
+if ($help) {
+    usage();
+}
+
+my $cmd = shift or usage();
+
+eval {
+    no strict 'refs';
+    main->can("cmd_$cmd") or die "no such command: $cmd\n";
+    *{"cmd_$cmd"}->(@ARGV);
+};
+if ($@) {
+    usage($@);
+}
+
+sub mysql_root {
+    my $sql = shift;
+    return system 'mysql', '-uroot', '-proot', '-e', $sql;
+}
+
+sub cmd_user {
+    my $name = shift or die "$0 user <name>\n";
+    mysql_root("grant all privileges on `$name`.* to `$name`\@localhost");
+    mysql_root("flush privileges");
+    mysql_root("show grants for `$name`\@localhost");
+    mysql_root("create database `$name`");
+}
+
+sub cmd_table {
+    my $name = shift or die "$0 table <name>\n";
+    # drop all tables
+    system "mysqldump -u$name --no-data $name | grep ^DROP | mysql -u$name $name";
+    open my $fh, '|-', 'mysql', "-u$name", $name or die $!;
+    print {$fh} <STDIN>;
+}
+
+sub usage {
+    my $message = shift;
+
+    my $usage = <<"USAGE";
+Usage: $0 <command>
+
+<command>:
+    user, table
+USAGE
+    if (defined $message) {
+        warn "$message";
+    } else {
+        $usage .= <<"USAGE";
+
+    user:
+
+        % $0 user <name>
+
+    table:
+
+        % $0 table <name>
+
+mysqlc is mysql command line wrapper.
+
+Example:
+    1) Create user and database
+
+        % $0 user webboard
+
+    2) Setup table schema
+
+        % $0 table webboard < schema.sql
+USAGE
+    }
+    die $usage;
+}
