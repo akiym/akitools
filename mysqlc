@@ -14,9 +14,8 @@ if ($help) {
 my $cmd = shift or usage();
 
 eval {
-    no strict 'refs';
-    main->can("cmd_$cmd") or die "no such command: $cmd\n";
-    *{"cmd_$cmd"}->(@ARGV);
+    my $cmd = main->can("cmd_$cmd") or die "no such command: $cmd\n";
+    $cmd->(@ARGV);
 };
 if ($@) {
     usage($@);
