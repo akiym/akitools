@@ -22,8 +22,13 @@ if ($@) {
 }
 
 sub mysql_root {
-    my $sql = shift;
-    return system 'mysql', '-uroot', '-proot', '-e', $sql;
+    my (@args) = @_;
+    if (@args == 1) {
+        # -e option by default
+        system 'mysql', '-uroot', '-proot', '-e', @args;
+    } else {
+        system 'mysql', '-uroot', '-proot', @args;
+    }
 }
 
 sub cmd_user {
