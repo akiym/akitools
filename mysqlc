@@ -45,6 +45,7 @@ sub cmd_table {
     system "mysqldump -u$name --no-data $name | grep ^DROP | mysql -u$name $name";
     open my $fh, '|-', 'mysql', "-u$name", $name or die $!;
     print {$fh} <STDIN>;
+    mysql_root($name, '-e', 'show tables');
 }
 
 sub usage {
