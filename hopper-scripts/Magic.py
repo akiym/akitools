@@ -241,37 +241,49 @@ def magic(func, arg, number):
       pass
     return flags
 
+
 def guess_arguments(inst, syscall=False):
+    arch = inst.getArchitecture()
     try:
-        arch = inst.getArchitecture()
         arg2 = int(inst.getRawArgument(1), 16)
-        if arch == 1:
-            # i386
-            if syscall:
-                reg = ['[re]?a[xl]', 'e?b[xl]', 'e?c[xl]', 'e?d[xl]', 'e?sil?', 'e?dil?', 'e?bpl?']
-                for i, r in enumerate(reg):
-                    if re.match(r, arg1):
-                        return i, arg2
-            else:
-                m = re.search('esp(?:\+(0x[0-9a-f]+))?', inst.getRawArgument(0))
-                if m:
-                    arg1 = m.group(1)
-                    if arg1:
-                        return int(arg1, 16) / 4, arg2
-                    else:
-                        return 0, arg2
-        elif arch == 2:
-            # x86_64
-            reg = ['[re]?a[xl]', '[re]?dil?', '[re]?sil?', '[re]?d[xl]', 'r10[dwb]?', 'r8[dwb]?', 'r9[dwb]?']
+    except:
+        arg2 = inst.getRawArgument(1)
+    if arch == 1:
+        # i386
+        if syscall:
+            reg = ['[re]?a[xl]', 'e?b[xl]', 'e?c[xl]', 'e?d[xl]', 'e?sil?', 'e?dil?', 'e?bpl?']
             arg1 = inst.getRawArgument(0)
             for i, r in enumerate(reg):
                 if re.match(r, arg1):
-                    return i, arg2
-    except:
-        pass
+                   return i, arg2
+        else:
+            m = re.search('esp(?:\+(0x[0-9a-f]+))?', inst.getRawArgument(0))
+            if m:
+                arg1 = m.group(1)
+                if arg1:
+                    return int(arg1, 16) / 4 + 1, arg2
+                else:
+                    return 0, arg2
+    elif arch == 2:
+        # x86_64
+        reg = ['[re]?a[xl]', '[re]?dil?', '[re]?sil?', '[re]?d[xl]', 'r10[dwb]?', 'r8[dwb]?', 'r9[dwb]?']
+        arg1 = inst.getRawArgument(0)
+        for i, r in enumerate(reg):
+            if re.match(r, arg1):
+                return i, arg2
 
     # fail
     return -1, None
+
+def text_from_xref(ref, address):
+    text = ''
+    while True:
+        byte = ref.readByte(address)
+        if not byte:
+            break
+        address += 1
+        text += chr(byte)
+    return '"%s"' % repr(text)[1:-1]
 
 doc = Document.getCurrentDocument()
 seg = doc.getCurrentSegment()
@@ -280,7 +292,7 @@ MAX_FIND_INSTS = 10
 
 current_address = doc.getCurrentAddress()
 current_inst = seg.getInstructionAtAddress(current_address)
-if current_inst.getInstructionString() == 'mov':
+if current_inst.getInstructionString() in ('mov', 'lea'):
     # call
     arg, value = guess_arguments(current_inst)
     if arg != -1:
@@ -299,18 +311,28 @@ if current_inst.getInstructionString() == 'mov':
             address += inst.getInstructionLength()
 
     # syscall
-    arg, value = guess_arguments(current_inst, syscall=True)
-    if arg == 0:
-        address = current_address
-        for i in range(MAX_FIND_INSTS):
-            inst = seg.getInstructionAtAddress(address)
+    address = current_address
+    args = {}
+    for i in range(MAX_FIND_INSTS):
+        inst = seg.getInstructionAtAddress(address)
+        arg, value = guess_arguments(inst, syscall=True)
+        if arg != -1:
+            refs = seg.getReferencesFromAddress(address)
+            if len(refs) > 0:
+                args[arg] = text_from_xref(doc.getSegmentAtAddress(refs[0]), value)
+            else:
+                args[arg] = value
+        else:
             opcode = inst.getInstructionString()
-            if (opcode == 'int' and inst.getRawArgument(1) == '0x80'):
-                comment = syscall32[value]
-                seg.setInlineCommentAtAddress(current_address, comment)
-                break
+            if (opcode == 'int' and inst.getRawArgument(0) == '0x80'):
+                comment = syscall32[args[0]]
             elif opcode == 'syscall':
                 comment = syscall64[value]
-                seg.setInlineCommentAtAddress(current_address, comment)
-                break
-            address += inst.getInstructionLength()
+            else:
+                continue
+            comment += '('
+            comment += ', '.join([str(args[k]) for k in sorted(args.keys()) if k != 0])
+            comment += ')'
+            seg.setInlineCommentAtAddress(address, comment)
+            break
+        address += inst.getInstructionLength()
