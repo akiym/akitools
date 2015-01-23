@@ -1,0 +1,66 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Getopt::Long qw/:config posix_default no_ignore_case bundling permute/;
+
+my $RE_REGISTER = qr/((?:e?(?:b(?:[xl]|pl?)|d(?:[xl]|il?)|c[xl]|sil?)|[re]?(?:d(?:[xl]|il?)|a[xl]|sil?)|r(?:[89]|10)[dwb]?))/;
+
+my %opt = (
+    rop => 5,
+);
+GetOptions(
+    'r|rop=s'  => \$opt{rop},
+    'u|unique' => \$opt{unique},
+) or usage();
+$opt{file} = shift or usage();
+
+my @args;
+for my $key (sort keys %opt) {
+    if (defined $opt{$key}) {
+        if ($key eq 'unique') {
+            push @args, "--$key";
+        } else {
+            push @args, "--$key=$opt{$key}";
+        }
+    }
+}
+my $cmd_args = join ' ', @args;
+my $out = `rp-lin-x86 $cmd_args`;
+
+my @gadgets;
+while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
+    my $addr = $1;
+    my @op = split /\s+;\s+/, $2;
+    if ($op[-1] eq 'ret') {
+        if (@op == 1) {
+            push @gadgets, sprintf 'ret = 0x%x', hex($addr);
+        } elsif (@op == 2) {
+            if ($op[0] eq 'leave') {
+                push @gadgets, sprintf 'leaveret = 0x%x', hex($addr);
+            } elsif ($op[0] =~ /(inc|dec) $RE_REGISTER/) {
+                push @gadgets, sprintf '%s_%s = 0x%x', $1, $2, hex($addr);
+            } elsif ($op[0] =~ /(add|sub|xor) $RE_REGISTER, $RE_REGISTER/) {
+                push @gadgets, sprintf '%s_%s_%s = 0x%x', $1, $2, $3, hex($addr);
+            }
+        }
+
+        # pop xxx; pop xxx; ...
+        my @reg;
+        for my $i (0..@op-2) {
+            if ($op[$i] =~ /pop $RE_REGISTER/) {
+                push @reg, $1;
+            } else {
+                last;
+            }
+            if ($i == @op-2) {
+                push @gadgets, sprintf 'pop_%s = 0x%x', join('_', @reg), hex($addr);
+            }
+        }
+    }
+}
+
+print join("\n", sort @gadgets) . "\n";
+
+sub usage {
+    die "Usage: $0 FILE\n";
+}
