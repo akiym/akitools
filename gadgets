@@ -44,6 +44,8 @@ while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
                 push @gadgets, sprintf '%s_%s = 0x%x', $1, $2, hex($addr);
             } elsif ($op[0] =~ /(add|sub|xor) $RE_REGISTER, $RE_REGISTER/) {
                 push @gadgets, sprintf '%s_%s_%s = 0x%x', $1, $2, $3, hex($addr);
+            } elsif ($op[0] =~ /(add|sub) ([re][sb]p), [qd]word \[([re][sb]p)([+-])0x([0-9A-F]+)\]/) {
+                push @gadgets, sprintf '%s_%s_%s%s%s = 0x%x', $1, $2, $3, $4 eq '-' ? 'N' : '', hex($5), hex($addr);
             }
         }
 
