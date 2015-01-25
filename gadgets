@@ -6,11 +6,12 @@ use Getopt::Long qw/:config posix_default no_ignore_case bundling permute/;
 my $RE_REGISTER = qr/((?:r(?:1(?:0[dlw]?|1[dlw]?|2[dlw]?|3[dlw]?|4[dlw]?|5[dlw]?)|8[dlw]?|9[dlw]?|[ac]x|b[px]|d[ix]|s[ip])|e(?:[ac]x|b[px]|d[ix]|s[ip])|b(?:[hlx]|pl?)|d(?:[hlx]|il?)|s(?:il?|pl?)|a[hlx]|c[hlx]))/;
 
 my %opt = (
-    rop => 5,
+    rop    => 5,
+    unique => 1,
 );
 GetOptions(
-    'r|rop=s'  => \$opt{rop},
-    'u|unique' => \$opt{unique},
+    'r|rop=s'   => \$opt{rop},
+    'u|unique!' => \$opt{unique},
 ) or usage();
 $opt{file} = shift or usage();
 
@@ -18,7 +19,9 @@ my @args;
 for my $key (sort keys %opt) {
     if (defined $opt{$key}) {
         if ($key eq 'unique') {
-            push @args, "--$key";
+            if ($opt{$key}) {
+                push @args, "--$key";
+            }
         } else {
             push @args, "--$key=$opt{$key}";
         }
