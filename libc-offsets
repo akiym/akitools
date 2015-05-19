@@ -1,0 +1,27 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+my $file = shift or die "Usage: $0 FILE\n";
+my $syms = `readelf -s $file`;
+
+print "offset = {\n";
+print_offset('__libc_start_main', $syms);
+print_offset('system', $syms);
+print_offset_str('/bin/sh');
+print "}\n";
+
+sub print_offset {
+    my ($func) = @_;
+    while ($syms =~ /\d+:\s+([0-9a-f]+).+FUNC.+\s+$func@@/g) {
+        printf "    '%s': 0x%x,\n", $func, hex($1);
+    }
+}
+
+sub print_offset_str {
+    my ($str) = @_;
+    my $offset = `strings -tx $file`;
+    while ($offset =~ /\s+([0-9a-f]+)\s+$str/g) {
+        printf "    '%s': 0x%x,\n", $str, hex($1);
+    }
+}
