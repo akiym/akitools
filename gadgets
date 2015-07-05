@@ -12,6 +12,7 @@ my %opt = (
 GetOptions(
     'r|rop=s'   => \$opt{rop},
     'u|unique!' => \$opt{unique},
+    's|style'   => \my $style,
 ) or usage();
 $opt{file} = shift or usage();
 
@@ -58,7 +59,11 @@ while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
                 last;
             }
             if ($i == @op-2) {
-                push @gadgets, sprintf 'pop_%s = 0x%x', join('_', @reg), hex($addr);
+                if ($style) {
+                    push @gadgets, sprintf 'pop%sret = 0x%x', (scalar @reg > 1 ? scalar @reg : ''), hex($addr);
+                } else {
+                    push @gadgets, sprintf 'pop_%s = 0x%x', join('_', @reg), hex($addr);
+                }
             }
         }
     }
