@@ -7,7 +7,7 @@ my $RE_REGISTER = qr/((?:r(?:1(?:0[dlw]?|1[dlw]?|2[dlw]?|3[dlw]?|4[dlw]?|5[dlw]?
 
 my %opt = (
     rop    => 5,
-    unique => 1,
+    unique => 0,
 );
 GetOptions(
     'r|rop=s'   => \$opt{rop},
@@ -19,7 +19,7 @@ my @args;
 for my $key (sort keys %opt) {
     if (defined $opt{$key}) {
         if ($key eq 'unique') {
-            if ($opt{$key}) {
+            if (!$opt{$key}) {
                 push @args, "--$key";
             }
         } else {
