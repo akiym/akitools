@@ -58,14 +58,22 @@ while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
         for my $i (0..@op-2) {
             if ($op[$i] =~ /pop $RE_REGISTER/) {
                 push @reg, $1;
+            } elsif ($op[$i] =~ /leave/) {
+                push @reg, 'leaveret';
             } else {
                 last;
             }
             if ($i == @op-2) {
-                if ($style) {
-                    push @gadgets, sprintf 'pop%sret = 0x%x', (scalar @reg > 1 ? scalar @reg : ''), hex($addr);
+                if ($op[$i-2] eq 'leave') {
+                    if (@op > 2) {
+                        push @gadgets, sprintf 'pop_%s = 0x%x', join('_', @reg), hex($addr);
+                    }
                 } else {
-                    push @gadgets, sprintf 'pop_%s = 0x%x', join('_', @reg), hex($addr);
+                    if ($style) {
+                        push @gadgets, sprintf 'pop%sret = 0x%x', (scalar @reg > 1 ? scalar @reg : ''), hex($addr);
+                    } else {
+                        push @gadgets, sprintf 'pop_%s = 0x%x', join('_', @reg), hex($addr);
+                    }
                 }
             }
         }
