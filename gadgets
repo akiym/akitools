@@ -32,24 +32,24 @@ for my $key (sort keys %opt) {
 my $cmd_args = join ' ', @args;
 my $out = `rp-lin-x86 $cmd_args`;
 
-my @gadgets;
+my @gadgets; # [order1, order2, gadget]
 while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
     my $addr = $1;
     my @op = split /\s+;\s+/, $2;
     if ($op[-1] eq 'ret') {
         if (@op == 1) {
-            push @gadgets, sprintf 'ret = 0x%x', hex($addr);
+            push @gadgets, [0, 0, sprintf 'ret = 0x%x', hex($addr)];
         } elsif (@op == 2) {
             if ($op[0] eq 'leave') {
-                push @gadgets, sprintf 'leaveret = 0x%x', hex($addr);
+                push @gadgets, [0, 0, sprintf 'leaveret = 0x%x', hex($addr)];
             } elsif ($op[0] =~ /(inc|dec) $RE_REGISTER/) {
-                push @gadgets, sprintf '%s_%s = 0x%x', $1, $2, hex($addr);
+                push @gadgets, [5, 0, sprintf '%s_%s = 0x%x', $1, $2, hex($addr)];
             } elsif ($op[0] =~ /(add|sub|xor) $RE_REGISTER, $RE_REGISTER/) {
-                push @gadgets, sprintf '%s_%s_%s = 0x%x', $1, $2, $3, hex($addr);
+                push @gadgets, [4, 0, sprintf '%s_%s_%s = 0x%x', $1, $2, $3, hex($addr)];
             } elsif ($op[0] =~ /(add|sub) ([re][sb]p), [qd]word \[([re][sb]p)([+-])0x([0-9A-F]+)\]/) {
-                push @gadgets, sprintf '%s_%s_%s%s%s = 0x%x', $1, $2, $3, ($4 eq '-' ? 'N' : ''), hex($5), hex($addr);
+                push @gadgets, [3, 0, sprintf '%s_%s_%s%s%s = 0x%x', $1, $2, $3, ($4 eq '-' ? 'N' : ''), hex($5), hex($addr)];
             } elsif ($carop && $op[0] =~ /add [qd]word \[([re](?:[sb]p|bx))([+-])0x([0-9A-F]+)\], $RE_REGISTER/) {
-                push @gadgets, sprintf 'add_%s_%sx%s_%s = 0x%x # carop gadget', $1, ($2 eq '-' ? 'N' : ''), $3, $4, hex($addr);
+                push @gadgets, [6, 0, sprintf 'add_%s_%sx%s_%s = 0x%x # carop gadget', $1, ($2 eq '-' ? 'N' : ''), $3, $4, hex($addr)];
             }
         }
 
@@ -64,15 +64,15 @@ while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
                 last;
             }
             if ($i == @op-2) {
-                if ($op[$i-2] eq 'leave') {
+                if ($reg[-1] eq 'leaveret') {
                     if (@op > 2) {
-                        push @gadgets, sprintf 'pop_%s = 0x%x', join('_', @reg), hex($addr);
+                        push @gadgets, [2, scalar @reg, sprintf 'pop_%s = 0x%x', join('_', @reg), hex($addr)];
                     }
                 } else {
                     if ($style) {
-                        push @gadgets, sprintf 'pop%sret = 0x%x', (scalar @reg > 1 ? scalar @reg : ''), hex($addr);
+                        push @gadgets, [1, 0, sprintf 'pop%sret = 0x%x', (scalar @reg > 1 ? scalar @reg : ''), hex($addr)];
                     } else {
-                        push @gadgets, sprintf 'pop_%s = 0x%x', join('_', @reg), hex($addr);
+                        push @gadgets, [1, scalar @reg, sprintf 'pop_%s = 0x%x', join('_', @reg), hex($addr)];
                     }
                 }
             }
@@ -80,7 +80,7 @@ while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
     }
 }
 
-print join("\n", sort @gadgets) . "\n";
+print join("\n", map { $_->[2] } sort { $a->[0] <=> $b->[0] or $a->[1] <=> $b->[1] or $a->[2] cmp $b->[2] } @gadgets) . "\n";
 
 sub usage {
     die "Usage: $0 FILE\n";
