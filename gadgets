@@ -4,6 +4,8 @@ use warnings;
 use Getopt::Long qw/:config posix_default no_ignore_case bundling permute/;
 
 my $RE_REGISTER = qr/((?:r(?:1(?:0[dlw]?|1[dlw]?|2[dlw]?|3[dlw]?|4[dlw]?|5[dlw]?)|8[dlw]?|9[dlw]?|[ac]x|b[px]|d[ix]|s[ip])|e(?:[ac]x|b[px]|d[ix]|s[ip])|b(?:[hlx]|pl?)|d(?:[hlx]|il?)|s(?:il?|pl?)|a[hlx]|c[hlx]))/;
+my $RE_IS_DWORD = qr/(?^:e(?:[ac]x|b[px]|d[ix]|s[ip]|ip);)/;
+my $RE_IS_QWORD = qr/(?^:r(?:[89]|1[012345]|[ac]x|b[px]|d[ix]|s[ip]|ip))/;
 
 my %opt = (
     rop    => 5,
@@ -33,6 +35,7 @@ my $cmd_args = join ' ', @args;
 my $out = `rp-lin-x86 $cmd_args`;
 
 my @gadgets; # [order1, order2, gadget]
+my %add_sp_gadgets;
 while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
     my $addr = $1;
     my @op = split /\s+;\s+/, $2;
@@ -49,7 +52,7 @@ while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
             } elsif ($op[0] =~ /(add|sub) ([re][sb]p), [qd]word \[([re][sb]p)([+-])0x([0-9A-F]+)\]/) {
                 push @gadgets, [3, 0, sprintf '%s_%s_%s%s%s = 0x%x', $1, $2, $3, ($4 eq '-' ? 'N' : ''), hex($5), hex($addr)];
             } elsif ($carop && $op[0] =~ /add [qd]word \[([re](?:[sb]p|bx))([+-])0x([0-9A-F]+)\], $RE_REGISTER/) {
-                push @gadgets, [6, 0, sprintf 'add_%s_%sx%s_%s = 0x%x # carop gadget', $1, ($2 eq '-' ? 'N' : ''), $3, $4, hex($addr)];
+                push @gadgets, [7, 0, sprintf 'add_%s_%sx%s_%s = 0x%x # carop gadget', $1, ($2 eq '-' ? 'N' : ''), $3, $4, hex($addr)];
             }
         }
 
@@ -77,7 +80,38 @@ while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
                 }
             }
         }
+
+        my $sp = 0;
+        for my $i (0..@op-2) {
+            if ($op[$i] =~ /pop $RE_REGISTER/) {
+                my $reg = $1;
+                if ($reg =~ $RE_IS_DWORD) {
+                    $sp += 4;
+                } elsif ($reg =~ $RE_IS_QWORD) {
+                    $sp += 8;
+                } else {
+                    $sp = 0;
+                    last;
+                }
+            } elsif ($op[$i] =~ /add [er]sp, 0x([0-9A-F]+)/) {
+                $sp += hex($1);
+            } else {
+                $sp = 0;
+                last;
+            }
+        }
+        if ($sp > 0) {
+            if (!$opt{unique}) {
+                $add_sp_gadgets{"add_sp_$sp"} = hex($addr);
+            } else {
+                push @gadgets, [6, 0, sprintf 'add_sp_%s = 0x%x', $sp, hex($addr)];
+            }
+        }
     }
+}
+
+for my $k (keys %add_sp_gadgets) {
+    push @gadgets, [6, 0, sprintf '%s = 0x%x', $k, hex($add_sp_gadgets{$k})];
 }
 
 print join("\n", map { $_->[2] } sort { $a->[0] <=> $b->[0] or $a->[1] <=> $b->[1] or $a->[2] cmp $b->[2] } @gadgets) . "\n";
