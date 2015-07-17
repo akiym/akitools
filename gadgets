@@ -102,7 +102,7 @@ while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
         }
         if ($sp > 0) {
             if (!$opt{unique}) {
-                $add_sp_gadgets{"add_sp_$sp"} = hex($addr);
+                $add_sp_gadgets{$sp} = hex($addr);
             } else {
                 push @gadgets, [6, 0, sprintf 'add_sp_%s = 0x%x', $sp, hex($addr)];
             }
@@ -110,8 +110,8 @@ while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
     }
 }
 
-for my $k (keys %add_sp_gadgets) {
-    push @gadgets, [6, 0, sprintf '%s = 0x%x', $k, hex($add_sp_gadgets{$k})];
+for my $sp (keys %add_sp_gadgets) {
+    push @gadgets, [6, $sp, sprintf 'add_sp_%s = 0x%x', $sp, hex($add_sp_gadgets{$sp})];
 }
 
 print join("\n", map { $_->[2] } sort { $a->[0] <=> $b->[0] or $a->[1] <=> $b->[1] or $a->[2] cmp $b->[2] } @gadgets) . "\n";
