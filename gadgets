@@ -41,18 +41,28 @@ while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
     my @op = split /\s+;\s+/, $2;
     if ($op[-1] eq 'ret') {
         if (@op == 1) {
-            push @gadgets, [0, 0, sprintf 'ret = 0x%x', hex($addr)];
+            push @gadgets, [0, 1, sprintf 'ret = 0x%x', hex($addr)];
         } elsif (@op == 2) {
-            if ($op[0] eq 'leave') {
-                push @gadgets, [0, 0, sprintf 'leaveret = 0x%x', hex($addr)];
-            } elsif ($op[0] =~ /(inc|dec) $RE_REGISTER/) {
-                push @gadgets, [5, 0, sprintf '%s_%s = 0x%x', $1, $2, hex($addr)];
+            if ($op[0] =~ /(syscall|int 0x80)/) {
+                if ($1 eq 'int 0x80') {
+                    push @gadgets, [0, 0, sprintf 'int80 = 0x%x', hex($addr)];
+                } else {
+                    push @gadgets, [0, 0, sprintf 'syscall = 0x%x', hex($addr)];
+                }
+            } elsif ($op[0] eq 'leave') {
+                push @gadgets, [0, 2, sprintf 'leaveret = 0x%x', hex($addr)];
+            } elsif ($op[0] =~ /mov $RE_REGISTER, $RE_REGISTER/) {
+                push @gadgets, [3, 0, sprintf 'mov_%s_%s = 0x%x', $1, $2, hex($addr)];
+            } elsif ($op[0] =~ /xchg $RE_REGISTER, $RE_REGISTER/) {
+                push @gadgets, [3, 1, sprintf 'xchg_%s_%s = 0x%x', $1, $2, hex($addr)];
             } elsif ($op[0] =~ /(add|sub|xor) $RE_REGISTER, $RE_REGISTER/) {
                 push @gadgets, [4, 0, sprintf '%s_%s_%s = 0x%x', $1, $2, $3, hex($addr)];
             } elsif ($op[0] =~ /(add|sub) ([re][sb]p), [qd]word \[([re][sb]p)([+-])0x([0-9A-F]+)\]/) {
-                push @gadgets, [3, 0, sprintf '%s_%s_%s%s%s = 0x%x', $1, $2, $3, ($4 eq '-' ? 'N' : ''), hex($5), hex($addr)];
+                push @gadgets, [4, 1, sprintf '%s_%s_%s%s%s = 0x%x', $1, $2, $3, ($4 eq '-' ? 'N' : ''), hex($5), hex($addr)];
+            } elsif ($op[0] =~ /(inc|dec) $RE_REGISTER/) {
+                push @gadgets, [6, 0, sprintf '%s_%s = 0x%x', $1, $2, hex($addr)];
             } elsif ($carop && $op[0] =~ /add [qd]word \[([re](?:[sb]p|bx))([+-])0x([0-9A-F]+)\], $RE_REGISTER/) {
-                push @gadgets, [7, 0, sprintf 'add_%s_%sx%s_%s = 0x%x # carop gadget', $1, ($2 eq '-' ? 'N' : ''), $3, $4, hex($addr)];
+                push @gadgets, [10, 0, sprintf 'add_%s_%sx%s_%s = 0x%x # carop gadget', $1, ($2 eq '-' ? 'N' : ''), $3, $4, hex($addr)];
             }
         }
 
@@ -104,7 +114,7 @@ while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
             if (!$opt{unique}) {
                 $add_sp_gadgets{$sp} = hex($addr);
             } else {
-                push @gadgets, [6, 0, sprintf 'add_sp_%s = 0x%x', $sp, hex($addr)];
+                push @gadgets, [5, 0, sprintf 'add_sp_%s = 0x%x', $sp, hex($addr)];
             }
         }
     }
