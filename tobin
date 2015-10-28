@@ -12,5 +12,8 @@ if ($hex =~ /\\x/) {
     my $c = Safe->new;
     print $c->reval(qq{"$hex"});
 } else {
+    if (length $hex % 2 != 0) {
+        $hex = '0' . $hex;
+    }
     print pack "H*", $hex;
 }
