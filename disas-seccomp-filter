@@ -24,7 +24,6 @@ my %arch_def = (
     1073741827 => 'i386',
 );
 
-warn "$DISASM $bpf";
 my $dump = `$DISASM $bpf`;
 for my $line (split /\n/, $dump) {
     $line =~ s/\$data\[0\]/seccomp_data.nr/;
