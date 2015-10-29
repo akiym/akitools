@@ -2,15 +2,15 @@
 
 PORT=4000
 SOCAT="/usr/bin/socat"
-WRAPPER='command-wrapper'
+STRACE="/usr/bin/strace"
+WRAPPER="command-wrapper" # clean up ENV
+
+SOCAT_OPTION=""
+STRACE_OPTION="-ivf -s 100"
 
 for OPT in $*
 do
     case $OPT in
-        -e)
-            EVENTS=$2
-            shift 2
-            ;;
         -p)
             PORT=$2
             shift 2
@@ -19,28 +19,35 @@ do
             NOSTRACE=1
             shift
             ;;
+        -e)
+            # event: d -e execve,read,write
+            STRACE_OPTION="$STRACE_OPTION -e'$2'"
+            shift 2
+            ;;
+        -w)
+            NOWRAPPER=1
+            shift
+            ;;
+        -q)
+            SOCAT_OPTION="$SOCAT_OPTION,pty,raw,echo=0,stderr"
+            STRACE_OPTION="$STRACE_OPTION -o strace"
+            shift
+            ;;
         --) shift
             break
             ;;
     esac
 done
 
-if [ ! -x $1 ]; then
-    echo "couldn't exec: $1"
-    exit -1
+if [ $NOWRAPPER ]; then
+    CMD="$@"
+else
+    CMD="$WRAPPER $@"
 fi
-
-CMD="$WRAPPER $@"
-
-#$SOCAT "tcp-l:$PORT,reuseaddr,fork" exec:"/usr/bin/strace -ivf -s100 $CMD",pty
 
 echo "listening on :$PORT"
 if [ $NOSTRACE ]; then
-    $SOCAT tcp-l:"$PORT,reuseaddr,fork" exec:"$CMD"
+    $SOCAT tcp-l:"$PORT,reuseaddr,fork" exec:"$CMD"$OPTION
 else
-    if [ $EVENTS ]; then
-        $SOCAT tcp-l:"$PORT,reuseaddr,fork" exec:"/usr/bin/strace -ivf -e'$EVENTS' -s100 $CMD"
-    else
-        $SOCAT tcp-l:"$PORT,reuseaddr,fork" exec:"/usr/bin/strace -ivf -s100 $CMD"
-    fi
+    $SOCAT tcp-l:"$PORT,reuseaddr,fork" exec:"$STRACE $STRACE_OPTION '$CMD'"$OPTION
 fi
