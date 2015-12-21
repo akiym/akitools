@@ -21,32 +21,50 @@ my $bpf = shift or usage();
 my %arch_def = (
     3221225534 => 'x86_64',
     1073741886 => 'x32',
-    1073741827 => 'i386',
+    1073741827 => 'x86',
 );
 
 my $dump = `$DISASM $bpf`;
+my $nr = 0;
 for my $line (split /\n/, $dump) {
-    $line =~ s/\$data\[0\]/seccomp_data.nr/;
-    $line =~ s/\$data\[4\]/seccomp_data.arch/;
-    $line =~ s/\$data\[8\]/seccomp_data.instruction_pointer/;
+    $line =~ s/\$data\[0\]/seccomp_data.nr/ && ($nr = 1);
+    $line =~ s/\$data\[4\]/seccomp_data.arch/ && ($nr = 0);
+    $line =~ s/\$data\[8\]/seccomp_data.instruction_pointer/ && ($nr = 0);
     for my $i (0..5) {
         my $n = 16 + $i * 8;
-        $line =~ s/\$data\[$n\]/seccomp_data.args[$i]/;
+        $line =~ s/\$data\[$n\]/seccomp_data.args[$i]/ && ($nr = 0);
     }
     $line =~ s{(jeq )(\d+)}{
         my $val;
-        if ($2 > 1024) {
+        if ($nr) {
+            $val = resolve_syscall_num($2);
+        } else {
             $val = $arch_def{$2};
             if (!$opt{arch}) {
                 $arch = $opt{arch} = $val;
             }
-        } else {
-            $val = 'SYS_' . `$RESOLVER -a $arch $2`;
-            chomp $val;
+            if (!$val) {
+                if ($2 > 4096) {
+                    $val = sprintf '0x%x', $2;
+                } else {
+                    $val = $2;
+                }
+            }
         }
         "$1$val";
     }e;
     print "$line\n";
+}
+
+sub resolve_syscall_num {
+    my $num = shift;
+    my $resolved = `$RESOLVER -a $arch $num 2>/dev/null`;
+    if ($? == 0) {
+        chomp $resolved;
+        return 'SYS_' . $resolved;
+    } else {
+        return sprintf '0x%x', $num;
+    }
 }
 
 sub usage {
