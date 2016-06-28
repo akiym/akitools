@@ -30,6 +30,7 @@ for my $line (split /\n/, $dump) {
     $line =~ s/\$data\[0\]/seccomp_data.nr/ && ($nr = 1);
     $line =~ s/\$data\[4\]/seccomp_data.arch/ && ($nr = 0);
     $line =~ s/\$data\[8\]/seccomp_data.instruction_pointer/ && ($nr = 0);
+    $line =~ s/\$data\[12\]/seccomp_data.instruction_pointer+4/ && ($nr = 0);
     for my $i (0..5) {
         my $n = 16 + $i * 8;
         $line =~ s/\$data\[$n\]/seccomp_data.args[$i]/ && ($nr = 0);
