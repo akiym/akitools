@@ -1,8 +1,10 @@
 #!/bin/bash
 
 PORT=4000
+GDBPORT=1234
 SOCAT="/usr/bin/socat"
 STRACE="/usr/bin/strace"
+GDBSERVER="/opt/bin/gdbserver"
 WRAPPER="command-wrapper" # clean up ENV
 
 SOCAT_OPTION=""
@@ -29,8 +31,19 @@ do
             shift
             ;;
         -q)
-            SOCAT_OPTION="$SOCAT_OPTION,pty,raw,echo=0,stderr"
-            STRACE_OPTION="$STRACE_OPTION -o strace"
+            SOCAT_OPTION="$SOCAT_OPTION,pty,raw,echo=0"
+            #SOCAT_OPTION="$SOCAT_OPTION,pty,raw,echo=0,stderr"
+            shift
+            ;;
+        -l)
+            # ltrace mode
+            STRACE="/usr/bin/ltrace"
+            STRACE_OPTION="-ifC -s 100"
+            shift
+            ;;
+        -g)
+            WITH_GDBSERVER=1
+            NOSTRACE=1
             shift
             ;;
         --) shift
@@ -39,15 +52,19 @@ do
     esac
 done
 
-if [ $NOWRAPPER ]; then
-    CMD="$@"
+if [ $WITH_GDBSERVER ]; then
+    CMD="$GDBSERVER localhost\:$GDBPORT $@"
 else
-    CMD="$WRAPPER $@"
+    if [ $NOWRAPPER ]; then
+        CMD="$@"
+    else
+        CMD="$WRAPPER $@"
+    fi
 fi
 
 echo "listening on :$PORT"
 if [ $NOSTRACE ]; then
-    $SOCAT tcp-l:"$PORT,reuseaddr,fork" exec:"$CMD"$OPTION
+    $SOCAT tcp-l:"$PORT,reuseaddr,fork" exec:"$CMD"$SOCAT_OPTION
 else
-    $SOCAT tcp-l:"$PORT,reuseaddr,fork" exec:"$STRACE $STRACE_OPTION '$CMD'"$OPTION
+    $SOCAT tcp-l:"$PORT,reuseaddr,fork" exec:"$STRACE $STRACE_OPTION '$CMD'"$SOCAT_OPTION
 fi
