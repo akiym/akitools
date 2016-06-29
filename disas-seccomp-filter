@@ -24,7 +24,7 @@ my %arch_def = (
     1073741827 => 'x86',
 );
 
-my $dump = `$DISASM $bpf`;
+my $dump = `$DISASM < $bpf`;
 my $nr = 0;
 for my $line (split /\n/, $dump) {
     $line =~ s/\$data\[0\]/seccomp_data.nr/ && ($nr = 1);
