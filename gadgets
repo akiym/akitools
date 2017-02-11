@@ -112,7 +112,7 @@ while ($out =~ /\033\[91m0x([0-9a-f]+)\033\[0m:\s+\033\[92m(.+)\s+\(.+\)/gm) {
         }
         if ($sp > 0) {
             if (!$opt{unique}) {
-                $add_sp_gadgets{$sp} = hex($addr);
+                $add_sp_gadgets{$sp} = $addr;
             } else {
                 push @gadgets, [5, 0, sprintf 'add_sp_%s = 0x%x', $sp, hex($addr)];
             }
