@@ -1,0 +1,50 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Config;
+use File::Find;
+use File::Spec;
+
+=pod
+in your .zshrc:
+function pd() {
+    local selected_module=${1:-$(find-perl-modules | fzf)}
+    command ce perldoc $selected_module
+}
+=cut
+
+my $archname = $Config{archname};
+
+my @carton_path = ('./local/lib/perl5', "./local/lib/perl5/$archname");
+my @user_path   = qw(./lib ./t/lib);
+
+my $top_path_len;
+my $has_archname;
+
+sub wanted {
+    my $name = $File::Find::name;
+    if ($name =~ s/\.(?:pm|pod)$//) {
+        my $module = substr $name, $top_path_len;
+        if (!$has_archname && substr($module, 0, length $archname) eq $archname) {
+            return;
+        }
+        $module =~ s!/!::!g;
+        print "$module\n";
+    }
+}
+
+my @paths = grep { $_ ne '.' } @INC;
+unshift @paths, @carton_path;
+push @paths, @user_path;
+@paths = uniq(map { File::Spec->rel2abs($_) } grep { -e } @paths);
+
+for my $path (@paths) {
+    $top_path_len = length($path) + 1;
+    $has_archname = ($path =~ /$archname$/);
+    find({wanted => \&wanted}, $path);
+}
+
+sub uniq {
+    my %seen;
+    return grep { !$seen{$_}++ } @_;
+}
