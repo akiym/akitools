@@ -1,0 +1,7 @@
+#!/bin/bash
+
+if [ -e 'cpanfile' ]; then
+    exec carton exec -- $@
+else
+    exec $@
+fi
