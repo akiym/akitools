@@ -8,7 +8,7 @@ GDBSERVER="/opt/bin/gdbserver"
 WRAPPER="command-wrapper" # clean up ENV
 
 SOCAT_OPTION=""
-STRACE_OPTION="-ivf -s 100"
+STRACE_OPTION="-ivf -s 4096 -x"
 
 for OPT in $*
 do
