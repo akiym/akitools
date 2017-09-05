@@ -133,5 +133,15 @@ my ($bss) = `$READELF -S $opt{file} | grep .bss` =~ /\s*\[\d+\]\s+\.bss\s+NOBITS
 printf "\nbss = 0x%x+0x300\n", hex $bss;
 
 sub usage {
-    die "Usage: $0 FILE\n";
+    die <<"USAGE";
+Usage: $0 FILE
+  -r, --rop=SIZE
+    specity gadget size
+  -u, --unique
+    show all gadgets
+  --carop
+    show carop gaget
+  -s, --style
+    pop_ebp -> pop2ret
+USAGE
 }
