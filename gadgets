@@ -3,12 +3,15 @@ use strict;
 use warnings;
 use Getopt::Long qw/:config posix_default no_ignore_case bundling permute/;
 
+my $RP = 'rp-lin-x64';
+my $READELF = 'readelf';
+
 my $RE_REGISTER = qr/((?:r(?:1(?:0[dlw]?|1[dlw]?|2[dlw]?|3[dlw]?|4[dlw]?|5[dlw]?)|8[dlw]?|9[dlw]?|[ac]x|b[px]|d[ix]|s[ip])|e(?:[ac]x|b[px]|d[ix]|s[ip])|b(?:[hlx]|pl?)|d(?:[hlx]|il?)|s(?:il?|pl?)|a[hlx]|c[hlx]))/;
 my $RE_IS_DWORD = qr/(?^:e(?:[ac]x|b[px]|d[ix]|s[ip]|ip);)/;
 my $RE_IS_QWORD = qr/(?^:r(?:[89]|1[012345]|[ac]x|b[px]|d[ix]|s[ip]|ip))/;
 
 my %opt = (
-    rop    => 5,
+    rop    => 6,
     unique => 0,
 );
 GetOptions(
@@ -32,7 +35,7 @@ for my $key (sort keys %opt) {
     }
 }
 my $cmd_args = join ' ', @args;
-my $out = `rp-lin-x86 $cmd_args`;
+my $out = `$RP $cmd_args`;
 
 my @gadgets; # [order1, order2, gadget]
 my %add_sp_gadgets;
@@ -125,6 +128,9 @@ for my $sp (keys %add_sp_gadgets) {
 }
 
 print join("\n", map { $_->[2] } sort { $a->[0] <=> $b->[0] or $a->[1] <=> $b->[1] or $a->[2] cmp $b->[2] } @gadgets) . "\n";
+
+my ($bss) = `$READELF -S $opt{file} | grep .bss` =~ /\s*\[\d+\]\s+\.bss\s+NOBITS\s+([0-9a-f]+)\s+/;
+printf "\nbss = 0x%x+0x300\n", hex $bss;
 
 sub usage {
     die "Usage: $0 FILE\n";
