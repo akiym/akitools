@@ -1,9 +1,16 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
+use Cwd;
+use File::Basename;
 
 my $GIST = 'gist';
 my $GIST_DIGEST = '.gistdigest';
+
+my @opt = (
+    '-p',
+    '-d', basename(getcwd),
+);
 
 my @filenames = @ARGV or die "$0 filename ...\n";
 
@@ -12,10 +19,10 @@ if (-e $GIST_DIGEST) {
         open my $fh, '<', $GIST_DIGEST or die $!;
         local $/; <$fh>;
     };
-    system $GIST, '-p', '-u', $digest, @filenames;
+    system $GIST, @opt, '-u', $digest, @filenames;
 } else {
     my $url = do {
-        open my $fh, '-|', $GIST, '-p', @filenames or die $!;
+        open my $fh, '-|', $GIST, @opt, @filenames or die $!;
         local $/; <$fh>;
     };
     print $url;
