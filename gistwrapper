@@ -1,0 +1,26 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+
+my $GIST = 'gist';
+my $GIST_DIGEST = '.gistdigest';
+
+my @filenames = @ARGV or die "$0 filename ...\n";
+
+if (-e $GIST_DIGEST) {
+    my $digest = do {
+        open my $fh, '<', $GIST_DIGEST or die $!;
+        local $/; <$fh>;
+    };
+    system $GIST, '-p', '-u', $digest, @filenames;
+} else {
+    my $url = do {
+        open my $fh, '-|', $GIST, '-p', @filenames or die $!;
+        local $/; <$fh>;
+    };
+    print $url;
+    my ($digest) = $url =~ m!/(\w+)$!;
+    open my $fh, '>', $GIST_DIGEST or die $!;
+    print {$fh} $digest;
+    close $fh;
+}
