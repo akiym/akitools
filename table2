@@ -1,0 +1,45 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+my $idx = shift;
+
+my $src = do { local $/; <> };
+my @lines = grep { $_ ne '' } split /\r?\n/, $src;
+
+my @border_offsets;
+for my $x (0 .. length($lines[0]) - 1) {
+    if (guess_border($x, @lines)) {
+        push @border_offsets, $x;
+    }
+}
+
+my $row = @border_offsets - 1;
+my @table = ('') x $row;
+for my $i (0..$#border_offsets-1) {
+    my $start = $border_offsets[$i];
+    my $end   = $border_offsets[$i+1];
+
+    for my $line (@lines) {
+        my $n = $end - $start - 1;
+        next if length($line) <= $n;
+        my $s = substr $line, $start + 1, $n;
+        $s =~ s/^[\x20]+|[\x20]+$//g;
+        $table[$i] .= $s;
+    }
+}
+
+if (defined $idx) {
+    print $table[$idx] . "\n";
+} else {
+    print +(sort { length $b <=> length $a } @table)[0] . "\n";
+}
+
+sub guess_border {
+    my ($x, @lines) = @_;
+    for my $line (@lines) {
+        next if length($line) <= $x;
+        return 0 if substr($line, $x, 1) ne '|';
+    }
+    return 1;
+}
