@@ -24,6 +24,22 @@ my %arch_def = (
     1073741827 => 'x86',
 );
 
+sub inspect {
+    my $line = shift;
+    my ($ln, $op, $jt, $jf, $k, $code) = $line =~
+        /^\s+(\d+):\s+(0x\w+)\s+(0x\w+)\s+(0x\w+)\s+(0x\w+)\s+(.+)$/ or return;
+    return {
+        line  => $ln,
+        op    => hex($op),
+        jt    => hex($jt),
+        jf    => hex($jf),
+        k     => hex($k),
+        code  => $code,
+
+        bpf_x => (hex($op) & 8 ? 1 : 0),
+    };
+}
+
 my $dump = `$DISASM < $bpf`;
 my $nr = 0;
 for my $line (split /\n/, $dump) {
@@ -54,6 +70,14 @@ for my $line (split /\n/, $dump) {
         }
         "$1$val";
     }e;
+
+    my $inspect = inspect($line);
+    if ($inspect->{bpf_x}) {
+        my $code = $inspect->{code};
+        (my $modified = $code) =~ s/^(\w+\s+)(.+?)(\s+|$)/$1X$3/;
+        $line =~ s/\Q$code\E/$modified/;
+    }
+
     print "$line\n";
 }
 
