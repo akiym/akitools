@@ -9,6 +9,7 @@ COMMANDS = \
 	gadgets \
 	gistwrapper \
 	git-branch-recent \
+	jwt \
 	libc-offsets \
 	noln \
 	o \

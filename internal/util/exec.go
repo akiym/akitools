@@ -19,6 +19,7 @@ func ExecEmbeddedScript(command, embeddedScript string, args []string) error {
 		command,
 		append([]string{tmpfile.Name()}, args...)...,
 	)
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
