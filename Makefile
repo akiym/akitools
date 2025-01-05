@@ -11,14 +11,20 @@ COMMANDS = \
 	libc-offsets \
 	o \
 	rotn \
+	shellcode \
 	tobin \
 	tohex
 
 .PHONY: build
-build: cmd/command_wrapper/command-wrapper bin/akitools $(COMMANDS)
+build: \
+	cmd/command_wrapper/command-wrapper \
+	cmd/shellcode/shellcode \
+	bin/akitools $(COMMANDS)
 
 cmd/command_wrapper/command-wrapper: cmd/command_wrapper/_command-wrapper.c
 	$(CC) -o $@ cmd/command_wrapper/_command-wrapper.c
+cmd/shellcode/shellcode: cmd/shellcode/_shellcode.c
+	$(CC) -o $@ cmd/shellcode/_shellcode.c
 
 .PHONY: bin/akitools
 bin/akitools:

@@ -15,6 +15,7 @@ import (
 	"github.com/akiym/akitools/cmd/libc_offsets"
 	"github.com/akiym/akitools/cmd/o"
 	"github.com/akiym/akitools/cmd/rotn"
+	"github.com/akiym/akitools/cmd/shellcode"
 	"github.com/akiym/akitools/cmd/tobin"
 	"github.com/akiym/akitools/cmd/tohex"
 )
@@ -37,6 +38,7 @@ func main() {
 	rootCmd.AddCommand(libc_offsets.Cmd)
 	rootCmd.AddCommand(o.Cmd)
 	rootCmd.AddCommand(rotn.Cmd)
+	rootCmd.AddCommand(shellcode.Cmd)
 	rootCmd.AddCommand(tobin.Cmd)
 	rootCmd.AddCommand(tohex.Cmd)
 
