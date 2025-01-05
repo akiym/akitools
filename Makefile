@@ -8,6 +8,7 @@ COMMANDS = \
 	d \
 	gadgets \
 	gistwrapper \
+	git-branch-recent \
 	libc-offsets \
 	o \
 	random_string \

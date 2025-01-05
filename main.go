@@ -12,6 +12,7 @@ import (
 	"github.com/akiym/akitools/cmd/d"
 	"github.com/akiym/akitools/cmd/gadgets"
 	"github.com/akiym/akitools/cmd/gistwrapper"
+	"github.com/akiym/akitools/cmd/git_branch_recent"
 	"github.com/akiym/akitools/cmd/libc_offsets"
 	"github.com/akiym/akitools/cmd/o"
 	"github.com/akiym/akitools/cmd/random_string"
@@ -36,6 +37,7 @@ func main() {
 	rootCmd.AddCommand(d.Cmd)
 	rootCmd.AddCommand(gadgets.Cmd)
 	rootCmd.AddCommand(gistwrapper.Cmd)
+	rootCmd.AddCommand(git_branch_recent.Cmd)
 	rootCmd.AddCommand(libc_offsets.Cmd)
 	rootCmd.AddCommand(o.Cmd)
 	rootCmd.AddCommand(random_string.Cmd)
