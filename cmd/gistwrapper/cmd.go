@@ -14,11 +14,6 @@ import (
 // Requirements:
 // - gist
 
-const gist = "gist"
-const gistDigest = ".gistdigest"
-
-var re = regexp.MustCompile(`/(\w+)$`)
-
 var Cmd = &cobra.Command{
 	Use:   "gistwrapper <filenames>",
 	Short: "A wrapper of gist(1)",
@@ -26,6 +21,11 @@ var Cmd = &cobra.Command{
 		return run(args)
 	},
 }
+
+const gist = "gist"
+const gistDigest = ".gistdigest"
+
+var re = regexp.MustCompile(`/(\w+)$`)
 
 func run(filenames []string) error {
 	cwd, err := os.Getwd()
