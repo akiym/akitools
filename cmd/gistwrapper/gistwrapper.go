@@ -83,5 +83,5 @@ func uploadGist(opt []string, filenames []string) (string, error) {
 func pbcopy(s string) {
 	cmd := exec.Command("pbcopy")
 	cmd.Stdin = strings.NewReader(s)
-	_ := cmd.Run()
+	_ = cmd.Run()
 }
