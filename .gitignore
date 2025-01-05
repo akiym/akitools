@@ -1,12 +1,2 @@
-Makefile
-META.yml
-MYMETA.yml
-blib/
-inc/
-pm_to_blib
-*.sw[po]
-^\.git/
-MANIFEST
-*.bak
-*.old
-.DS_Store
+/bin/
+/cmd/command_wrapper/command-wrapper
