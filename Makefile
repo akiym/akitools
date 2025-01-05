@@ -10,6 +10,7 @@ COMMANDS = \
 	gistwrapper \
 	libc-offsets \
 	o \
+	random_string \
 	rotn \
 	shellcode \
 	tobin \
