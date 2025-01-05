@@ -19,26 +19,31 @@ COMMANDS = \
 build: \
 	cmd/command_wrapper/command-wrapper \
 	cmd/shellcode/shellcode \
-	bin/akitools $(COMMANDS)
+	bin \
+	$(COMMANDS)
 
 cmd/command_wrapper/command-wrapper: cmd/command_wrapper/_command-wrapper.c
 	$(CC) -o $@ $^
 cmd/shellcode/shellcode: cmd/shellcode/_shellcode.c
 	$(CC) -o $@ $^
 
-.PHONY: bin/akitools
-bin/akitools:
-	go build -ldflags=$(BUILD_LDFLAGS) -o bin/akitools
+.PHONY: bin
+bin:
+	GOOS=darwin GOARCH=arm64 go build -ldflags=$(BUILD_LDFLAGS) -o bin/darwin-arm64/akitools
+	GOOS=darwin GOARCH=amd64 go build -ldflags=$(BUILD_LDFLAGS) -o bin/darwin-amd64/akitools
+	GOOS=linux GOARCH=amd64 go build -ldflags=$(BUILD_LDFLAGS) -o bin/linux-amd64/akitools
 
 .PHONY: $(COMMANDS)
 $(COMMANDS):
-	ln -sf akitools bin/$@
+	ln -sf akitools bin/darwin-arm64/$@
+	ln -sf akitools bin/darwin-amd64/$@
+	ln -sf akitools bin/linux-amd64/$@
 
 .PHONY: clean
 clean:
 	rm -f cmd/command_wrapper/command-wrapper
 	rm -f cmd/shellcode/shellcode
-	rm -f bin/*
+	rm -rf bin/*
 
 .PHONY: install
 install:
