@@ -16,7 +16,7 @@ GetOptions(
 
 my $file = shift or usage();
 
-my $syms = `readelf -s $file`;
+my $syms = `readelf -sW $file`;
 my $offset = `strings -tx $file`;
 my (%func, %str);
 
