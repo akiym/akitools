@@ -18,7 +18,7 @@ COMMANDS = \
 build: cmd/command_wrapper/command-wrapper bin/akitools $(COMMANDS)
 
 cmd/command_wrapper/command-wrapper: cmd/command_wrapper/_command-wrapper.c
-	$(CC) -o $@ $@.c
+	$(CC) -o $@ cmd/command_wrapper/_command-wrapper.c
 
 .PHONY: bin/akitools
 bin/akitools:
