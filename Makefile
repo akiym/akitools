@@ -10,6 +10,7 @@ COMMANDS = \
 	gistwrapper \
 	git-branch-recent \
 	libc-offsets \
+	noln \
 	o \
 	random_string \
 	rotn \
