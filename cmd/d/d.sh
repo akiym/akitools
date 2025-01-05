@@ -2,9 +2,9 @@
 
 PORT=4000
 GDBPORT=1234
-SOCAT="/usr/bin/socat"
-STRACE="/usr/bin/strace"
-GDBSERVER="/opt/bin/gdbserver"
+SOCAT="socat"
+STRACE="strace"
+GDBSERVER="gdbserver"
 WRAPPER="command-wrapper" # clean up ENV
 
 SOCAT_OPTION=""
@@ -20,6 +20,10 @@ do
         -n)
             NOSTRACE=1
             shift
+            ;;
+        -E)
+            COMMAND_WRAPPER_ENV="$2"
+            shift 2
             ;;
         -e)
             # event: d -e execve,read,write
@@ -46,6 +50,18 @@ do
             NOSTRACE=1
             shift
             ;;
+        -h)
+            echo "Usage: d [-p <port>] [-n] [-e <event>] [-w] [-q] [-l] [-g] [-h] <binary>"
+            echo "  -p <port>   listen port number"
+            echo "  -n          no trace"
+            echo "  -E <...>    set environment variable when using command-wrapper"
+            echo "  -e <event>  event (e.g. execve,read,write)"
+            echo "  -w          no wrapper"
+            echo "  -q          socat option: pty,raw,echo=0"
+            echo "  -l          use ltrace"
+            echo "  -g          gdbserver"
+            exit 0
+            ;;
         --) shift
             break
             ;;
@@ -58,13 +74,14 @@ else
     if [ $NOWRAPPER ]; then
         CMD="$@"
     else
+        export COMMAND_WRAPPER_ENV
         CMD="$WRAPPER $@"
     fi
 fi
 
 echo "listening on :$PORT"
 if [ $NOSTRACE ]; then
-    $SOCAT tcp-l:"$PORT,reuseaddr,fork" exec:"$CMD"$SOCAT_OPTION
+    $SOCAT tcp-l:"$PORT,reuseaddr,fork" "exec:$CMD"$SOCAT_OPTION
 else
-    $SOCAT tcp-l:"$PORT,reuseaddr,fork" exec:"$STRACE $STRACE_OPTION '$CMD'"$SOCAT_OPTION
+    $SOCAT tcp-l:"$PORT,reuseaddr,fork" "exec:$STRACE $STRACE_OPTION '$CMD'"$SOCAT_OPTION
 fi
