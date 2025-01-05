@@ -27,7 +27,7 @@ var Cmd = &cobra.Command{
 	},
 }
 
-func run(args []string) error {
+func run(filenames []string) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -45,18 +45,18 @@ func run(args []string) error {
 			return err
 		}
 		opt = append(opt, "-u", string(digest))
-		opt = append(opt, args...)
-		cmd := exec.Command(gist, opt...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	} else {
-		output, err := exec.Command(gist, append(opt, args...)...).Output()
+		url, err := uploadGist(opt, filenames)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%s", output)
-		url := strings.TrimSuffix(string(output), "\n")
+		fmt.Println(url)
+		pbcopy(url)
+	} else {
+		url, err := uploadGist(opt, filenames)
+		if err != nil {
+			return err
+		}
+		fmt.Println(url)
 		m := re.FindStringSubmatch(url)
 		if len(m) != 2 {
 			return fmt.Errorf("invalid url: %s", url)
@@ -65,7 +65,23 @@ func run(args []string) error {
 		if err := os.WriteFile(gistDigest, []byte(digest), 0644); err != nil {
 			return err
 		}
+		pbcopy(url)
 	}
 
 	return nil
+}
+
+func uploadGist(opt []string, filenames []string) (string, error) {
+	output, err := exec.Command(gist, append(opt, filenames...)...).Output()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "%s", output)
+		return "", err
+	}
+	return strings.TrimSuffix(string(output), "\n"), nil
+}
+
+func pbcopy(s string) {
+	cmd := exec.Command("pbcopy")
+	cmd.Stdin = strings.NewReader(s)
+	_ := cmd.Run()
 }
