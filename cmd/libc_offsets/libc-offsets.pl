@@ -51,7 +51,7 @@ sub invert_hash {
 
 sub offset {
     my ($func) = @_;
-    while ($syms =~ /\d+:\s+([0-9a-f]+).+FUNC.+\s+$func@@/g) {
+    while ($syms =~ /\d+:\s+([0-9a-f]+).+(?:FUNC|OBJECT).+\s+$func\@\@/g) {
         $func{hex $1} = $func;
     }
 }
