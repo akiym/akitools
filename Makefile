@@ -22,9 +22,9 @@ build: \
 	bin/akitools $(COMMANDS)
 
 cmd/command_wrapper/command-wrapper: cmd/command_wrapper/_command-wrapper.c
-	$(CC) -o $@ cmd/command_wrapper/_command-wrapper.c
+	$(CC) -o $@ $^
 cmd/shellcode/shellcode: cmd/shellcode/_shellcode.c
-	$(CC) -o $@ cmd/shellcode/_shellcode.c
+	$(CC) -o $@ $^
 
 .PHONY: bin/akitools
 bin/akitools:
@@ -37,6 +37,7 @@ $(COMMANDS):
 .PHONY: clean
 clean:
 	rm -f cmd/command_wrapper/command-wrapper
+	rm -f cmd/shellcode/shellcode
 	rm -f bin/*
 
 .PHONY: install
