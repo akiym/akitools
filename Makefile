@@ -1,5 +1,5 @@
 CURRENT_REVISION = $(shell git rev-parse --short HEAD)
-BUILD_LDFLAGS = "-s -w -X github.com/akiym/akitools/cli.revision=$(CURRENT_REVISION)"
+BUILD_LDFLAGS = "-s -w -X main.revision=$(CURRENT_REVISION)"
 GOBIN ?= $(shell go env GOPATH)/bin
 
 COMMANDS = \
