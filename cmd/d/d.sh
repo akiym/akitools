@@ -75,7 +75,7 @@ else
         CMD="$@"
     else
         export COMMAND_WRAPPER_ENV
-        CMD="$WRAPPER $@"
+        CMD="$WRAPPER -- $@"
     fi
 fi
 

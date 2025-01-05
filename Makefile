@@ -16,16 +16,7 @@ COMMANDS = \
 	tohex
 
 .PHONY: build
-build: \
-	cmd/command_wrapper/command-wrapper \
-	cmd/shellcode/shellcode \
-	bin \
-	$(COMMANDS)
-
-cmd/command_wrapper/command-wrapper: cmd/command_wrapper/_command-wrapper.c
-	$(CC) -o $@ $^
-cmd/shellcode/shellcode: cmd/shellcode/_shellcode.c
-	$(CC) -o $@ $^
+build: bin $(COMMANDS)
 
 .PHONY: bin
 bin:
@@ -41,8 +32,6 @@ $(COMMANDS):
 
 .PHONY: clean
 clean:
-	rm -f cmd/command_wrapper/command-wrapper
-	rm -f cmd/shellcode/shellcode
 	rm -rf bin/*
 
 .PHONY: install
