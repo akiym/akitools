@@ -22,6 +22,8 @@ import (
 	"github.com/akiym/akitools/cmd/shellcode"
 	"github.com/akiym/akitools/cmd/tobin"
 	"github.com/akiym/akitools/cmd/tohex"
+	"github.com/akiym/akitools/cmd/wag"
+	"github.com/akiym/akitools/cmd/wfind"
 )
 
 var version = "0.0.1"
@@ -49,6 +51,8 @@ func main() {
 	rootCmd.AddCommand(shellcode.Cmd)
 	rootCmd.AddCommand(tobin.Cmd)
 	rootCmd.AddCommand(tohex.Cmd)
+	rootCmd.AddCommand(wag.Cmd)
+	rootCmd.AddCommand(wfind.Cmd)
 
 	argv0 := filepath.Base(os.Args[0])
 	for _, cmd := range rootCmd.Commands() {

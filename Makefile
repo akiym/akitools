@@ -17,7 +17,9 @@ COMMANDS = \
 	rotn \
 	shellcode \
 	tobin \
-	tohex
+	tohex \
+	wag \
+	wfind
 
 .PHONY: build
 build: bin $(COMMANDS)
