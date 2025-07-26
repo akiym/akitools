@@ -27,7 +27,7 @@ bindkey '^g' fzf-git-branch-activity-checkout
 chomp(my $user = `git config --get user.name`);
 my @skip_remote_branch = qw//;
 
-my $lines = `git for-each-ref --count=100 --sort=-committerdate refs/ --format="%(authordate),%(authorname),%(refname)" --perl`;
+my $lines = `git for-each-ref --count=1000 --sort=-committerdate refs/ --format="%(authordate),%(authorname),%(refname)" --perl`;
 for my $line (split /\n/, $lines) {
     my ($date, $author, $branch) = eval $line;
     next if $branch eq 'refs/stash';
