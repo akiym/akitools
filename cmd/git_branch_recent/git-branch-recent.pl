@@ -25,7 +25,7 @@ bindkey '^g' fzf-git-branch-activity-checkout
 =cut
 
 chomp(my $user = `git config --get user.name`);
-my @skip_remote_branch = qw/devel HEAD/;
+my @skip_remote_branch = qw//;
 
 my $lines = `git for-each-ref --count=100 --sort=-committerdate refs/ --format="%(authordate),%(authorname),%(refname)" --perl`;
 for my $line (split /\n/, $lines) {
