@@ -1,6 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
+use List::Util qw/any/;
 use Term::ANSIColor;
 use Time::Piece;
 
@@ -27,6 +28,8 @@ bindkey '^g' fzf-git-branch-activity-checkout
 chomp(my $user = `git config --get user.name`);
 my @skip_remote_branch = qw//;
 
+my @merged_branches = grep { not m!origin/HEAD -> ! } map { s/^\s*//r } split /\n/, `git branch --remotes --merged`;
+
 my $lines = `git for-each-ref --count=1000 --sort=-committerdate refs/ --format="%(authordate),%(authorname),%(refname)" --perl`;
 for my $line (split /\n/, $lines) {
     my ($date, $author, $branch) = eval $line;
@@ -36,10 +39,11 @@ for my $line (split /\n/, $lines) {
     )->strftime('[%Y-%m-%d %H:%M]');
     my $author_aligned = sprintf '%-16s', $author;
     $branch =~ s!^refs/(heads|remotes|tags)/?!!;
+    next if any { $_ eq $branch } @merged_branches;
     my $is_remote = ($1 eq 'remotes');
     my $is_tag = ($1 eq 'tags');
 
-    next if $is_remote && ($author eq $user || grep { $_ eq $branch } map { "origin/$_" } @skip_remote_branch);
+    next if $is_remote && (grep { $_ eq $branch } map { "origin/$_" } @skip_remote_branch);
 
     print join(' ',
         colored($date, 'blue'),
