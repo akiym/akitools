@@ -4,6 +4,7 @@ GOBIN ?= $(shell go env GOPATH)/bin
 
 COMMANDS = \
 	binary2png \
+	ccwrap \
 	command-wrapper \
 	d \
 	gadgets \
