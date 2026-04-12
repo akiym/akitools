@@ -10,6 +10,7 @@ COMMANDS = \
 	gadgets \
 	gistwrapper \
 	git-branch-recent \
+	git-sign \
 	jwt \
 	libc-offsets \
 	noln \

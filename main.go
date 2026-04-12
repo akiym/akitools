@@ -14,6 +14,7 @@ import (
 	"github.com/akiym/akitools/cmd/gadgets"
 	"github.com/akiym/akitools/cmd/gistwrapper"
 	"github.com/akiym/akitools/cmd/git_branch_recent"
+	"github.com/akiym/akitools/cmd/git_sign"
 	"github.com/akiym/akitools/cmd/jwt"
 	"github.com/akiym/akitools/cmd/libc_offsets"
 	"github.com/akiym/akitools/cmd/noln"
@@ -44,6 +45,7 @@ func main() {
 	rootCmd.AddCommand(gadgets.Cmd)
 	rootCmd.AddCommand(gistwrapper.Cmd)
 	rootCmd.AddCommand(git_branch_recent.Cmd)
+	rootCmd.AddCommand(git_sign.Cmd)
 	rootCmd.AddCommand(jwt.Cmd)
 	rootCmd.AddCommand(libc_offsets.Cmd)
 	rootCmd.AddCommand(noln.Cmd)
