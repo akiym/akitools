@@ -156,6 +156,20 @@ func runCompress() error {
 }
 
 func run(args []string) (int, error) {
+	// 先にsettings.local.jsonを最新のcwdに揃えてから検査する
+	if err := ensureLocalSandboxSettings(); err != nil {
+		return 1, fmt.Errorf("setup sandbox settings: %w", err)
+	}
+
+	ok, err := confirmSettings()
+	if err != nil {
+		return 1, fmt.Errorf("check settings: %w", err)
+	}
+	if !ok {
+		fmt.Fprintln(os.Stderr, "ccwrap: aborted")
+		return 1, nil
+	}
+
 	workspace, err := workspaceName()
 	if err != nil {
 		return 1, fmt.Errorf("workspace: %w", err)
