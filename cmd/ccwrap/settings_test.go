@@ -354,6 +354,98 @@ func TestEnsureLocalSandboxSettingsSkipsHomeDir(t *testing.T) {
 	}
 }
 
+func writeTestFiles(t *testing.T, dir string, files []string) {
+	t.Helper()
+	for _, f := range files {
+		path := filepath.Join(dir, f)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestFindAutoLoadedFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFiles(t, dir, []string{
+		".claude/settings.json",
+		".claude/settings.local.json",
+		".claude/CLAUDE.md",
+		".claude/commands/deploy.md",
+		".claude/rules/style.md",
+		".mcp.json",
+		"CLAUDE.md",
+		"apps/web/.claude/settings.json",
+		"apps/web/.claude/skills/deploy/SKILL.md",
+		"apps/web/CLAUDE.local.md",
+		"docs/CLAUDE.md",
+		".git/CLAUDE.md",
+		"src/main.go",
+		"README.md",
+	})
+
+	files, err := findAutoLoadedFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		".claude/CLAUDE.md",
+		".claude/commands/deploy.md",
+		".claude/rules/style.md",
+		".mcp.json",
+		"CLAUDE.md",
+		"apps/web/.claude/settings.json",
+		"apps/web/.claude/skills/deploy/SKILL.md",
+		"apps/web/CLAUDE.local.md",
+		"docs/CLAUDE.md",
+	}
+	if !reflect.DeepEqual(files, want) {
+		t.Errorf("files = %v, want %v", files, want)
+	}
+}
+
+func TestFindAutoLoadedFilesSettingsOnly(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFiles(t, dir, []string{
+		".claude/settings.json",
+		".claude/settings.local.json",
+		"src/main.go",
+	})
+
+	files, err := findAutoLoadedFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Errorf("expected no files, got %v", files)
+	}
+}
+
+func TestFindAutoLoadedFilesEmpty(t *testing.T) {
+	files, err := findAutoLoadedFiles(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files != nil {
+		t.Errorf("expected nil, got %v", files)
+	}
+}
+
+func TestFindAutoLoadedFilesClaudeNotDir(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFiles(t, dir, []string{".claude"})
+
+	files, err := findAutoLoadedFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(files, []string{".claude"}) {
+		t.Errorf("files = %v, want [.claude]", files)
+	}
+}
+
 func TestManagedFilesystemPath(t *testing.T) {
 	tests := []struct {
 		name string

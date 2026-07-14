@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -203,6 +204,59 @@ func readLine(r io.Reader) (string, error) {
 	}
 }
 
+// findAutoLoadedFiles は cwd 配下でClaude Codeが自動で読み込みうるファイルを
+// 列挙する。対象は任意の深さの .claude 配下(skills, agents, commands, rules,
+// CLAUDE.mdなど。サブディレクトリの .claude はdirectory-scoped skillsとして
+// 遅延発見される)、各階層の CLAUDE.md / CLAUDE.local.md、ルートの .mcp.json。
+// ルート直下の settings.json / settings.local.json はconfirmSettingsが中身を
+// 検査するうえ、settings.local.jsonはccwrap自身も書き込むため除外する
+func findAutoLoadedFiles(cwd string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(cwd, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" && path != cwd {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(cwd, path)
+		if err != nil {
+			return err
+		}
+		if autoLoadedPath(rel) {
+			files = append(files, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+func autoLoadedPath(rel string) bool {
+	switch rel {
+	case filepath.Join(".claude", "settings.json"), filepath.Join(".claude", "settings.local.json"):
+		return false
+	case ".mcp.json":
+		return true
+	}
+	switch filepath.Base(rel) {
+	// ".claude" はディレクトリでなくファイルやsymlinkとして置かれている場合
+	case "CLAUDE.md", "CLAUDE.local.md", ".claude":
+		return true
+	}
+	for _, seg := range strings.Split(filepath.Dir(rel), string(filepath.Separator)) {
+		if seg == ".claude" {
+			return true
+		}
+	}
+	return false
+}
+
 func confirmSettings() (bool, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -225,14 +279,25 @@ func confirmSettings() (bool, error) {
 		return false, err
 	}
 
+	autoLoaded, err := findAutoLoadedFiles(cwd)
+	if err != nil {
+		return false, err
+	}
+
 	overrides := findOverrides(global, project, "")
 	concerns := findSandboxConcerns(".claude/settings.json", project, cwd, home)
 	concerns = append(concerns, findSandboxConcerns(".claude/settings.local.json", local, cwd, home)...)
 
-	if len(overrides) == 0 && len(concerns) == 0 {
+	if len(overrides) == 0 && len(concerns) == 0 && len(autoLoaded) == 0 {
 		return true, nil
 	}
 
+	if len(autoLoaded) > 0 {
+		fmt.Fprintln(os.Stderr, "ccwrap: project contains files Claude Code loads automatically:")
+		for _, f := range autoLoaded {
+			fmt.Fprintf(os.Stderr, "  %s\n", f)
+		}
+	}
 	if len(overrides) > 0 {
 		fmt.Fprintln(os.Stderr, "ccwrap: .claude/settings.json overrides ~/.claude/settings.json:")
 		for _, o := range overrides {
