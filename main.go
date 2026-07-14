@@ -9,6 +9,7 @@ import (
 
 	"github.com/akiym/akitools/cmd/binary2png"
 	"github.com/akiym/akitools/cmd/ccwrap"
+	"github.com/akiym/akitools/cmd/cmdsbx"
 	"github.com/akiym/akitools/cmd/command_wrapper"
 	"github.com/akiym/akitools/cmd/d"
 	"github.com/akiym/akitools/cmd/gadgets"
@@ -40,6 +41,7 @@ func main() {
 
 	rootCmd.AddCommand(binary2png.Cmd)
 	rootCmd.AddCommand(ccwrap.Cmd)
+	rootCmd.AddCommand(cmdsbx.Cmd)
 	rootCmd.AddCommand(command_wrapper.Cmd)
 	rootCmd.AddCommand(d.Cmd)
 	rootCmd.AddCommand(gadgets.Cmd)
