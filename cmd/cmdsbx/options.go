@@ -30,10 +30,22 @@ type RunOptions struct {
 	// NoPull passes `--pull=never` so a missing image fails immediately
 	// instead of triggering an implicit pull. Set by `cmdsbx do` because
 	// that command is intended for unconditional agent allow-lists.
-	NoPull  bool
-	Mounts  []Mount
-	Env     []string
-	Command []string
+	NoPull bool
+	// Interactive streams stdin into the sandbox (`do -i`), mirroring
+	// docker run -i; without it stdin is closed immediately so runs
+	// never block waiting on it.
+	Interactive bool
+	// Name names an ephemeral (ID-less) container so the broker can
+	// force-remove it when a run times out: killing the docker CLI does
+	// not stop the container it started.
+	Name string
+	// Memory and PidsLimit cap container resources; set by the broker
+	// ("" / 0 disable).
+	Memory    string
+	PidsLimit int
+	Mounts    []Mount
+	Env       []string
+	Command   []string
 }
 
 // ExecOptions configures `cmdsbx exec`.
@@ -49,6 +61,19 @@ var idPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
 func validateID(id string) error {
 	if !idPattern.MatchString(id) {
 		return fmt.Errorf("invalid sandbox id %q", id)
+	}
+	return nil
+}
+
+var imagePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:/@-]*$`)
+
+// validateImage rejects image strings that docker would parse as CLI
+// flags (e.g. "--privileged") instead of an image reference: the image
+// is the first positional argument of `docker run`, so a leading '-'
+// would inject arbitrary run flags.
+func validateImage(image string) error {
+	if !imagePattern.MatchString(image) {
+		return fmt.Errorf("invalid image %q", image)
 	}
 	return nil
 }

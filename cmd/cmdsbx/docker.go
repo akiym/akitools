@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -28,6 +29,9 @@ func containerName(id string) string {
 func BuildRunArgs(o *RunOptions) ([]string, error) {
 	if o.Image == "" {
 		return nil, errors.New("no image specified")
+	}
+	if err := validateImage(o.Image); err != nil {
+		return nil, err
 	}
 	if o.ID == "" && len(o.Command) == 0 {
 		return nil, errors.New("no command specified")
@@ -66,6 +70,9 @@ func BuildRunArgs(o *RunOptions) ([]string, error) {
 	args := []string{"run", "--init", "--label", managedLabel}
 	if o.ID == "" {
 		args = append(args, "--rm", "-i")
+		if o.Name != "" {
+			args = append(args, "--name", o.Name)
+		}
 	} else {
 		if err := validateID(o.ID); err != nil {
 			return nil, err
@@ -82,6 +89,12 @@ func BuildRunArgs(o *RunOptions) ([]string, error) {
 	}
 	if o.NoPull {
 		args = append(args, "--pull", "never")
+	}
+	if o.Memory != "" {
+		args = append(args, "--memory", o.Memory)
+	}
+	if o.PidsLimit > 0 {
+		args = append(args, "--pids-limit", strconv.Itoa(o.PidsLimit))
 	}
 
 	mountMode := "ro"

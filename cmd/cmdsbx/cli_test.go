@@ -54,6 +54,7 @@ func TestMainDoRejectsUnsafeFlags(t *testing.T) {
 // produces: any new argument — however it gets populated — must show up
 // here and be justified against the safety contract.
 func TestMainDoBuildsIsolatedCommand(t *testing.T) {
+	noBroker(t)
 	var calls [][]string
 	stubExecCommand(t, &calls)
 	code := Main([]string{"do", "--image", "alpine:3", "--env", "A=1", "--workdir", "/w", "--", "echo", "hi"})
@@ -75,6 +76,7 @@ func TestMainDoBuildsIsolatedCommand(t *testing.T) {
 }
 
 func TestMainDoUsesPullNever(t *testing.T) {
+	noBroker(t)
 	var calls [][]string
 	stubExecCommand(t, &calls)
 	code := Main([]string{"do", "--", "true"})

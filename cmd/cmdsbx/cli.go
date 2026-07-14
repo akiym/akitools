@@ -17,6 +17,7 @@ Run commands in disposable Docker containers, isolated from the host.
 
 Commands:
   do      Run a command in an ephemeral sandbox (no mounts, no network)
+  broker  Serve 'do' requests for sandboxed clients over a unix socket
   unsafe  Like do, but allows isolation-weakening options; never allow unconditionally
   run     Create a sandbox session
   exec    Run a command in an existing sandbox session
@@ -35,6 +36,8 @@ func Main(args []string) int {
 	switch args[0] {
 	case "do":
 		return cmdDo(args[1:])
+	case "broker":
+		return cmdBroker(args[1:])
 	case "unsafe":
 		return cmdUnsafe(args[1:])
 	case "run":
@@ -193,13 +196,13 @@ func parseExit(err error) int {
 }
 
 // buildAndRun is the shared tail of do/unsafe/run: build the docker
-// argv and execute it, keeping stdin attached unless detached.
-func buildAndRun(o *RunOptions) int {
+// argv and execute it. stdin says whether os.Stdin is attached.
+func buildAndRun(o *RunOptions, stdin bool) int {
 	dockerArgs, err := BuildRunArgs(o)
 	if err != nil {
 		return fail(err)
 	}
-	return runDocker(dockerArgs, !o.Detach)
+	return runDocker(dockerArgs, stdin)
 }
 
 func fail(err error) int {
@@ -228,15 +231,19 @@ func cmdDo(args []string) int {
 	var o RunOptions
 	fs := newFlagSet("cmdsbx do")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: cmdsbx do [options] -- <command...>\n\nRuns the command with no mounts and no network. Host files and\nnetwork access require 'cmdsbx unsafe'.\n\nOptions:\n")
+		fmt.Fprint(os.Stderr, "Usage: cmdsbx do [options] -- <command...>\n\nRuns the command with no mounts and no network. Host files and\nnetwork access require 'cmdsbx unsafe'. When a broker daemon\n(cmdsbx broker) is reachable, the run is delegated to it.\n\nOptions:\n")
 		fs.PrintDefaults()
 	}
 	addSafeFlags(fs, &o)
+	fs.BoolVar(&o.Interactive, "i", false, "stream stdin into the sandbox (pipes, heredocs, -i -- bash)")
 	if exit, ok := parseEphemeral(fs, args, &o); !ok {
 		return exit
 	}
 	o.NoPull = true
-	return buildAndRun(&o)
+	if conn := dialBroker(); conn != nil {
+		return runViaBroker(conn, &o)
+	}
+	return buildAndRun(&o, o.Interactive)
 }
 
 func cmdUnsafe(args []string) int {
@@ -254,7 +261,7 @@ func cmdUnsafe(args []string) int {
 	if err := finalizeRunOptions(&o, mounts); err != nil {
 		return fail(err)
 	}
-	return buildAndRun(&o)
+	return buildAndRun(&o, true)
 }
 
 func cmdRun(args []string) int {
@@ -276,7 +283,7 @@ func cmdRun(args []string) int {
 	if err := finalizeRunOptions(&o, mounts); err != nil {
 		return fail(err)
 	}
-	return buildAndRun(&o)
+	return buildAndRun(&o, !o.Detach)
 }
 
 func cmdExec(args []string) int {
