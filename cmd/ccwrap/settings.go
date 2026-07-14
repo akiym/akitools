@@ -42,7 +42,7 @@ func loadSettings(path string) (map[string]any, error) {
 	return settings, nil
 }
 
-func sortedKeys(m map[string]any) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -257,6 +257,51 @@ func autoLoadedPath(rel string) bool {
 	return false
 }
 
+var projectSettingsFiles = []string{
+	filepath.Join(".claude", "settings.json"),
+	filepath.Join(".claude", "settings.local.json"),
+}
+
+// confirmationTargets は確認対象ファイルの相対パスと内容ハッシュを集める。
+// 自動読み込みファイルすべてに加え、overrides/concernsがある場合は
+// その元になるプロジェクト側settingsも対象にする
+func confirmationTargets(cwd string, autoLoaded []string, hasSettingsFindings bool) (map[string]string, error) {
+	current := make(map[string]string, len(autoLoaded))
+	for _, f := range autoLoaded {
+		h, err := hashFile(filepath.Join(cwd, f))
+		if err != nil {
+			return nil, fmt.Errorf("hash %s: %w", f, err)
+		}
+		current[f] = h
+	}
+	if hasSettingsFindings {
+		for _, f := range projectSettingsFiles {
+			h, err := hashFile(filepath.Join(cwd, f))
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return nil, fmt.Errorf("hash %s: %w", f, err)
+			}
+			current[f] = h
+		}
+	}
+	return current, nil
+}
+
+func containsSettingsFile(paths ...[]string) bool {
+	for _, list := range paths {
+		for _, f := range list {
+			for _, s := range projectSettingsFiles {
+				if f == s {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func confirmSettings() (bool, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -292,22 +337,53 @@ func confirmSettings() (bool, error) {
 		return true, nil
 	}
 
-	if len(autoLoaded) > 0 {
-		fmt.Fprintln(os.Stderr, "ccwrap: project contains files Claude Code loads automatically:")
-		for _, f := range autoLoaded {
-			fmt.Fprintf(os.Stderr, "  %s\n", f)
-		}
+	current, err := confirmationTargets(cwd, autoLoaded, len(overrides) > 0 || len(concerns) > 0)
+	if err != nil {
+		return false, err
 	}
-	if len(overrides) > 0 {
-		fmt.Fprintln(os.Stderr, "ccwrap: .claude/settings.json overrides ~/.claude/settings.json:")
-		for _, o := range overrides {
-			fmt.Fprintf(os.Stderr, "  %s\n    global:  %s\n    project: %s\n", o.path, jsonString(o.global), jsonString(o.project))
-		}
+	saved, err := loadApproval(cwd)
+	if err != nil {
+		return false, err
 	}
-	if len(concerns) > 0 {
-		fmt.Fprintln(os.Stderr, "ccwrap: project settings relax sandbox restrictions:")
-		for _, c := range concerns {
-			fmt.Fprintf(os.Stderr, "  %s: %s = %s\n", c.file, c.path, jsonString(c.value))
+	added, changed, removed := diffApproval(saved, current)
+	if saved != nil && len(added)+len(changed)+len(removed) == 0 {
+		return true, nil
+	}
+
+	showSettingsFindings := true
+	if saved == nil {
+		if len(autoLoaded) > 0 {
+			fmt.Fprintln(os.Stderr, "ccwrap: project contains files Claude Code loads automatically:")
+			for _, f := range autoLoaded {
+				fmt.Fprintf(os.Stderr, "  %s\n", f)
+			}
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "ccwrap: previously approved files have changed:")
+		for _, f := range added {
+			fmt.Fprintf(os.Stderr, "  new: %s\n", f)
+		}
+		for _, f := range changed {
+			fmt.Fprintf(os.Stderr, "  changed: %s\n", f)
+		}
+		for _, f := range removed {
+			fmt.Fprintf(os.Stderr, "  removed: %s\n", f)
+		}
+		// settingsが承認済みのまま変わっていなければ詳細の再表示は省く
+		showSettingsFindings = containsSettingsFile(added, changed)
+	}
+	if showSettingsFindings {
+		if len(overrides) > 0 {
+			fmt.Fprintln(os.Stderr, "ccwrap: .claude/settings.json overrides ~/.claude/settings.json:")
+			for _, o := range overrides {
+				fmt.Fprintf(os.Stderr, "  %s\n    global:  %s\n    project: %s\n", o.path, jsonString(o.global), jsonString(o.project))
+			}
+		}
+		if len(concerns) > 0 {
+			fmt.Fprintln(os.Stderr, "ccwrap: project settings relax sandbox restrictions:")
+			for _, c := range concerns {
+				fmt.Fprintf(os.Stderr, "  %s: %s = %s\n", c.file, c.path, jsonString(c.value))
+			}
 		}
 	}
 	fmt.Fprint(os.Stderr, "Continue? [y/N] ")
@@ -317,6 +393,9 @@ func confirmSettings() (bool, error) {
 	}
 	switch strings.ToLower(strings.TrimSpace(line)) {
 	case "y", "yes":
+		if err := saveApproval(cwd, current); err != nil {
+			fmt.Fprintf(os.Stderr, "ccwrap: failed to save approval: %v\n", err)
+		}
 		return true, nil
 	}
 	return false, nil

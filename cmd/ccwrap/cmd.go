@@ -48,7 +48,20 @@ func dataDir() (string, error) {
 		}
 		dir = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(dir, "ccwrap"), nil
+	newDir := filepath.Join(dir, "akitools", "ccwrap")
+	// 旧配置(<data>/ccwrap)からの移行
+	oldDir := filepath.Join(dir, "ccwrap")
+	if _, err := os.Stat(newDir); os.IsNotExist(err) {
+		if _, err := os.Stat(oldDir); err == nil {
+			if err := os.MkdirAll(filepath.Dir(newDir), 0o755); err != nil {
+				return "", err
+			}
+			if err := os.Rename(oldDir, newDir); err != nil {
+				return "", err
+			}
+		}
+	}
+	return newDir, nil
 }
 
 func findFreePort() (int, error) {
