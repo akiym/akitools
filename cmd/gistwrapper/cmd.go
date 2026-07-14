@@ -29,10 +29,7 @@ var Cmd = &cobra.Command{
 }
 
 const gistDigest = ".gistdigest"
-
-// gh auth のデフォルト認証情報には触れず、gist 専用トークンを
-// 1Password から都度取得して GH_TOKEN として渡す。GIST_TOKEN_REF で上書き可能。
-const defaultTokenRef = "op://Private/gist/token"
+const opGistTokenRef = "op://Personal/gist/token"
 
 var re = regexp.MustCompile(`/(\w+)$`)
 
@@ -100,20 +97,13 @@ func updateGist(env []string, digest string, filenames []string) error {
 }
 
 func readToken() (string, error) {
-	ref := os.Getenv("GIST_TOKEN_REF")
-	if ref == "" {
-		ref = defaultTokenRef
-	}
-	cmd := exec.Command("op", "read", ref)
+	cmd := exec.Command("op", "read", opGistTokenRef)
 	cmd.Stderr = os.Stderr
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
 	token := strings.TrimSpace(string(output))
-	if token == "" {
-		return "", fmt.Errorf("empty token: %s", ref)
-	}
 	return token, nil
 }
 
