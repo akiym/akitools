@@ -39,10 +39,10 @@ func run() error {
 		0,
 	)
 	if errno != 0 {
-		return fmt.Errorf("mmap failed: %v", errno)
+		return fmt.Errorf("mmap failed: %w", errno)
 	}
 
-	shellcode := unsafe.Pointer(addr)
+	shellcode := unsafe.Pointer(addr) //nolint:govet
 	copy((*[size]byte)(shellcode)[:], src)
 	p := unsafe.Pointer(&shellcode)
 	(*(*func())(unsafe.Pointer(&p)))()

@@ -50,10 +50,10 @@ install:
 test:
 	go test -v -race ./...
 
-.PHONY: lint
-lint: $(GOBIN)/staticcheck
-	go vet ./...
-	staticcheck ./...
+.PHONY: fmt
+fmt:
+	golangci-lint fmt
 
-$(GOBIN)/staticcheck:
-	go install honnef.co/go/tools/cmd/staticcheck@latest
+.PHONY: lint
+lint:
+	golangci-lint run

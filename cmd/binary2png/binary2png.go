@@ -77,7 +77,7 @@ func run(args []string) error {
 				bitColor = color.RGBA{A: 255}
 			}
 		}
-		m.Set(i%*width, int(i / *width), bitColor)
+		m.Set(i%*width, i / *width, bitColor)
 	}
 
 	img, err := os.Create(*outfile)

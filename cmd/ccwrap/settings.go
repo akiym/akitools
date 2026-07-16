@@ -3,6 +3,7 @@ package ccwrap
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -388,7 +389,7 @@ func confirmSettings() (bool, error) {
 	}
 	fmt.Fprint(os.Stderr, "Continue? [y/N] ")
 	line, err := readLine(os.Stdin)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return false, err
 	}
 	switch strings.ToLower(strings.TrimSpace(line)) {

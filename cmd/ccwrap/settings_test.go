@@ -1,6 +1,7 @@
 package ccwrap
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -116,7 +117,7 @@ func TestReadLine(t *testing.T) {
 	for _, tt := range tests {
 		r := strings.NewReader(tt.in)
 		got, err := readLine(r)
-		if got != tt.want || err != tt.wantErr {
+		if got != tt.want || !errors.Is(err, tt.wantErr) {
 			t.Errorf("readLine(%q) = (%q, %v), want (%q, %v)", tt.in, got, err, tt.want, tt.wantErr)
 		}
 	}

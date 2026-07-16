@@ -30,8 +30,10 @@ import (
 	"github.com/akiym/akitools/cmd/wfind"
 )
 
-var version = "0.0.1"
-var revision = "HEAD"
+var (
+	version  = "0.0.1"
+	revision = "HEAD"
+)
 
 func main() {
 	rootCmd := &cobra.Command{

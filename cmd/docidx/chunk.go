@@ -57,7 +57,7 @@ func sectionsToChunks(relPath, docTitle string, secs []*section) []Chunk {
 			crumbs = append(crumbs, docTitle)
 		}
 		for l := 1; l <= sec.level; l++ {
-			if titles[l] != "" && !(l == 1 && titles[l] == docTitle) {
+			if titles[l] != "" && (l != 1 || titles[l] != docTitle) {
 				crumbs = append(crumbs, titles[l])
 			}
 		}

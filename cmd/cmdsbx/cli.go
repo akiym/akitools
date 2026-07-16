@@ -119,7 +119,7 @@ func finalizeRunOptions(o *RunOptions, mounts stringList) error {
 			return fmt.Errorf("resolve --rootfs: %w", err)
 		}
 		if abs == "/" {
-			return fmt.Errorf("--rootfs / is not supported with Docker; mount a specific directory instead")
+			return errors.New("--rootfs / is not supported with Docker; mount a specific directory instead")
 		}
 		if _, err := os.Stat(abs); err != nil {
 			return fmt.Errorf("--rootfs: %w", err)
@@ -351,6 +351,6 @@ func cmdList(args []string) int {
 			fmt.Fprintln(w, line)
 		}
 	}
-	w.Flush()
+	_ = w.Flush()
 	return 0
 }

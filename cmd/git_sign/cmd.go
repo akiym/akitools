@@ -1,6 +1,7 @@
 package git_sign
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -99,7 +100,7 @@ func resolveUpstream() (string, error) {
 			return ref, nil
 		}
 	}
-	return "", fmt.Errorf("no upstream configured for current branch (set one with `git branch --set-upstream-to=...`)")
+	return "", errors.New("no upstream configured for current branch (set one with `git branch --set-upstream-to=...`)")
 }
 
 func listUnpushedHashes() ([]string, error) {
@@ -243,7 +244,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	execCmd := fmt.Sprintf("%s git-sign --head-only", shellQuote(executable))
+	execCmd := shellQuote(executable) + " git-sign --head-only"
 
 	var args []string
 	if parentErr != nil {

@@ -1,0 +1,29 @@
+version: "2"
+linters:
+  enable:
+    - errorlint
+    - nolintlint
+    - perfsprint
+    - predeclared
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+  settings:
+    errcheck:
+      exclude-functions:
+        - (*os.File).Close
+  exclusions:
+    rules:
+      - linters:
+          - errcheck
+          - govet
+          - nolintlint
+          - structcheck
+        path: _test.go
+      - linters: [errcheck]
+        text: Error return value of .(.*Close|.*CloseWrite|.*Rollback|fmt\.Fprint.*|os\.Remove(All)?). is not checked
+formatters:
+  enable:
+    - gofumpt
+    - goimports

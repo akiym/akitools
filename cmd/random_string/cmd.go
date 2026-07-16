@@ -2,6 +2,7 @@ package random_string
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -17,10 +18,12 @@ var Cmd = &cobra.Command{
 	},
 }
 
-var ascii bool
-var asciiLc bool
-var lessAscii bool
-var hirakata bool
+var (
+	ascii     bool
+	asciiLc   bool
+	lessAscii bool
+	hirakata  bool
+)
 
 func init() {
 	Cmd.Flags().BoolVarP(&ascii, "ascii", "a", false, "ASCII")
@@ -38,7 +41,7 @@ func run(args []string) error {
 			return err
 		}
 		if length < 1 {
-			return fmt.Errorf("length must be greater than 0")
+			return errors.New("length must be greater than 0")
 		}
 	}
 

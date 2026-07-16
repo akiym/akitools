@@ -28,8 +28,10 @@ var Cmd = &cobra.Command{
 	},
 }
 
-const gistDigest = ".gistdigest"
-const opGistTokenRef = "op://Personal/gist/token"
+const (
+	gistDigest     = ".gistdigest"
+	opGistTokenRef = "op://Personal/gist/token"
+)
 
 var re = regexp.MustCompile(`/(\w+)$`)
 
@@ -58,7 +60,7 @@ func run(filenames []string) error {
 		if len(m) != 2 {
 			return fmt.Errorf("invalid url: %s", url)
 		}
-		if err := os.WriteFile(gistDigest, []byte(m[1]), 0644); err != nil {
+		if err := os.WriteFile(gistDigest, []byte(m[1]), 0o644); err != nil {
 			return err
 		}
 	default:

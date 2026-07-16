@@ -220,13 +220,13 @@ func serveConn(ctx context.Context, conn net.Conn, cfg brokerConfig) {
 	fw := &frameWriter{w: conn}
 	// Bound how long a connection may sit without a request: it holds a
 	// concurrency slot, and the shutdown path waits for it via wg.Wait.
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	req, err := readRequest(conn)
 	if err != nil {
 		writeExit(fw, 2, fmt.Sprintf("bad request: %v", err))
 		return
 	}
-	conn.SetReadDeadline(time.Time{})
+	_ = conn.SetReadDeadline(time.Time{})
 	o := &RunOptions{
 		Image:     req.Image,
 		Workdir:   req.Workdir,
@@ -262,7 +262,7 @@ func serveConn(ctx context.Context, conn net.Conn, cfg brokerConfig) {
 	// closed its end. Like docker's own CLI, the run finishes with the
 	// process and the pump is unblocked by the deferred conn.Close.
 	go func() {
-		io.Copy(stdin, conn)
+		_, _ = io.Copy(stdin, conn)
 		stdin.Close()
 	}()
 	err = cmd.Run()
@@ -296,7 +296,7 @@ func removeContainer(name string) {
 	cmd := execCommand("docker", "rm", "-f", name)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
-	cmd.Run()
+	_ = cmd.Run()
 }
 
 func readRequest(r io.Reader) (*brokerRequest, error) {
@@ -339,7 +339,7 @@ func (fw *frameWriter) writeFrame(typ byte, payload []byte) error {
 
 func writeExit(fw *frameWriter, code int, msg string) {
 	payload, _ := json.Marshal(brokerExit{Code: code, Error: msg})
-	fw.writeFrame(frameExit, payload)
+	_ = fw.writeFrame(frameExit, payload)
 }
 
 // streamWriter frames one output stream of the sandboxed command. A
@@ -426,7 +426,7 @@ func runViaBroker(conn net.Conn, o *RunOptions) int {
 	// mirroring docker; otherwise half-close right away.
 	if o.Interactive {
 		go func() {
-			io.Copy(conn, os.Stdin)
+			_, _ = io.Copy(conn, os.Stdin)
 			closeWrite(conn)
 		}()
 	} else {
@@ -440,9 +440,9 @@ func runViaBroker(conn net.Conn, o *RunOptions) int {
 		}
 		switch typ {
 		case frameStdout:
-			os.Stdout.Write(payload)
+			_, _ = os.Stdout.Write(payload)
 		case frameStderr:
-			os.Stderr.Write(payload)
+			_, _ = os.Stderr.Write(payload)
 		case frameExit:
 			var exit brokerExit
 			if err := json.Unmarshal(payload, &exit); err != nil {

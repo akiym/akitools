@@ -9,7 +9,7 @@ func DecodeEscapeSequence(src []byte) ([]byte, error) {
 	var b bytes.Buffer
 	for i := 0; i < len(src); {
 		if src[i] == '\\' {
-			if !(i+1 < len(src)) {
+			if i+1 >= len(src) {
 				return nil, errors.New("EOL")
 			}
 			i++

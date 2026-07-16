@@ -3,6 +3,7 @@ package docidx
 import (
 	"bytes"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -201,7 +202,7 @@ type searchResult struct {
 func searchIndex(db *sql.DB, query string, dict aliasDict, limit int) ([]searchResult, error) {
 	andQuery, orQuery := buildFTSQueries(query, dict)
 	if andQuery == "" {
-		return nil, fmt.Errorf("empty query")
+		return nil, errors.New("empty query")
 	}
 
 	results, err := runFTSQuery(db, andQuery, limit)
@@ -307,7 +308,7 @@ func queryPageChunks(db *sql.DB, path string) ([]Chunk, error) {
 
 func getChunk(db *sql.DB, id int64) (*Chunk, error) {
 	c, err := scanChunk(db.QueryRow(`SELECT `+chunkColumns+` FROM documents WHERE id = ?`, id).Scan)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("no chunk with id %d", id)
 	}
 	if err != nil {

@@ -1,12 +1,14 @@
 package ccwrap
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -217,7 +219,7 @@ func run(args []string) (int, error) {
 		"--quiet",
 		"--mode", "reverse:https://api.anthropic.com",
 		"--listen-host", "127.0.0.1",
-		"--listen-port", fmt.Sprintf("%d", port),
+		"--listen-port", strconv.Itoa(port),
 		"--set", "stream_large_bodies=1",
 		"--store-streamed-bodies",
 		"-w", mitmFile,
@@ -232,8 +234,8 @@ func run(args []string) (int, error) {
 	var cleanupOnce sync.Once
 	cleanupMitmdump := func() {
 		cleanupOnce.Do(func() {
-			mitmdump.Process.Signal(syscall.SIGTERM)
-			mitmdump.Wait()
+			_ = mitmdump.Process.Signal(syscall.SIGTERM)
+			_ = mitmdump.Wait()
 		})
 	}
 
@@ -262,7 +264,7 @@ func run(args []string) (int, error) {
 	signal.Notify(sigCh, syscall.SIGTERM)
 	go func() {
 		for range sigCh {
-			claude.Process.Signal(syscall.SIGTERM)
+			_ = claude.Process.Signal(syscall.SIGTERM)
 		}
 	}()
 
@@ -284,7 +286,8 @@ func run(args []string) (int, error) {
 	}
 
 	if claudeErr != nil {
-		if exitErr, ok := claudeErr.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(claudeErr, &exitErr) {
 			return exitErr.ExitCode(), nil
 		}
 		return 1, fmt.Errorf("claude: %w", claudeErr)
