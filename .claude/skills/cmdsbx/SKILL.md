@@ -1,6 +1,6 @@
 ---
 name: cmdsbx
-description: Run a command inside a disposable Docker sandbox via the `cmdsbx` CLI. Use when a command is not permitted on the host (interpreters like python/node/ruby, unfamiliar CLIs, untrusted or generated code) and it does not need to read or write host files — only stdout/stderr output matters. Examples - compute something with a python one-liner, test a code snippet, try an unfamiliar tool safely.
+description: Run a command inside a disposable Docker sandbox via the `cmdsbx` CLI. Use when a command is not permitted on the host (interpreters like python/node/awk, unfamiliar CLIs, untrusted or generated code) and it does not need to read or write host files — only stdout/stderr output matters. Examples - compute something with a python one-liner, test a code snippet, try an unfamiliar tool safely.
 allowed-tools: Bash(cmdsbx do:*)
 ---
 
@@ -12,7 +12,7 @@ command exits. Exit code, stdout, and stderr propagate to the caller.
 
 ## When to use
 
-- The command is an interpreter or tool not allowed on the host (python, node, ruby, perl, ...)
+- The command is an interpreter or tool not allowed on the host (python, node, awk, ruby, perl, ...)
 - Running untrusted or freshly generated code snippets
 - Computing or verifying something where only the printed output matters
 
@@ -37,6 +37,9 @@ cmdsbx do --image python:3.14-slim -- python3 -c 'print(1 + 2)'
 
 # node
 cmdsbx do --image node:24-slim -- node -e 'console.log(6 * 7)'
+
+# awk
+echo "1\n2" | cmdsbx do -i -- awk '{ print $1 }'
 
 # pass code via stdin (-i required) to avoid shell-quoting issues
 echo 'print("hi")' | cmdsbx do -i --image python:3.14-slim -- python3 -
