@@ -8,6 +8,7 @@ COMMANDS = \
 	cmdsbx \
 	command-wrapper \
 	d \
+	docidx \
 	gadgets \
 	gistwrapper \
 	git-branch-recent \

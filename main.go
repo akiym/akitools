@@ -12,6 +12,7 @@ import (
 	"github.com/akiym/akitools/cmd/cmdsbx"
 	"github.com/akiym/akitools/cmd/command_wrapper"
 	"github.com/akiym/akitools/cmd/d"
+	"github.com/akiym/akitools/cmd/docidx"
 	"github.com/akiym/akitools/cmd/gadgets"
 	"github.com/akiym/akitools/cmd/gistwrapper"
 	"github.com/akiym/akitools/cmd/git_branch_recent"
@@ -44,6 +45,7 @@ func main() {
 	rootCmd.AddCommand(cmdsbx.Cmd)
 	rootCmd.AddCommand(command_wrapper.Cmd)
 	rootCmd.AddCommand(d.Cmd)
+	rootCmd.AddCommand(docidx.Cmd)
 	rootCmd.AddCommand(gadgets.Cmd)
 	rootCmd.AddCommand(gistwrapper.Cmd)
 	rootCmd.AddCommand(git_branch_recent.Cmd)
