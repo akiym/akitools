@@ -57,7 +57,7 @@ func buildIndex(dbPath, docsDir string, excludes []string) (files, chunks int, e
 		return 0, 0, err
 	}
 	if len(docFiles) == 0 {
-		return 0, 0, fmt.Errorf("no .md/.html files found under %s", docsDir)
+		return 0, 0, fmt.Errorf("no .md/.html/.rst files found under %s", docsDir)
 	}
 
 	if err := removeExistingIndex(dbPath); err != nil {
@@ -103,6 +103,8 @@ func buildIndex(dbPath, docsDir string, excludes []string) (files, chunks int, e
 			if err != nil {
 				return 0, 0, fmt.Errorf("%s: %w", relPath, err)
 			}
+		case ".rst":
+			cs = chunkRST(relPath, src)
 		}
 		for _, c := range cs {
 			if _, err := insertDoc.Exec(c.Path, c.Title, c.Headings, c.Breadcrumbs, c.Body, c.Anchor, c.Kind); err != nil {
@@ -172,7 +174,7 @@ func collectDocFiles(root string, excludes []string) ([]string, error) {
 			return nil
 		}
 		switch strings.ToLower(filepath.Ext(d.Name())) {
-		case ".md", ".markdown", ".html", ".htm":
+		case ".md", ".markdown", ".html", ".htm", ".rst":
 			if matcher != nil && matcher.MatchesPath(rel) {
 				return nil
 			}

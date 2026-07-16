@@ -21,9 +21,9 @@ var (
 var Cmd = &cobra.Command{
 	Use:   "docidx <command>",
 	Short: "Build and search a local documentation index (SQLite FTS5/BM25)",
-	Long: `docidx indexes library documentation (Markdown/HTML) into SQLite FTS5
-by splitting files on their heading structure (H1-H3), then serves fast
-BM25-ranked search over title/headings/breadcrumbs/body.
+	Long: `docidx indexes library documentation (Markdown/HTML/reStructuredText)
+into SQLite FTS5 by splitting files on their heading structure (H1-H3), then
+serves fast BM25-ranked search over title/headings/breadcrumbs/body.
 
 Typical flow:
   docidx build docs/          # generate index.db
@@ -36,8 +36,8 @@ Query terms are expanded via an optional aliases.json next to the index
 
 var buildCmd = &cobra.Command{
 	Use:   "build <docs-dir>",
-	Short: "Index Markdown/HTML files under a directory into index.db",
-	Long: `Index Markdown/HTML files under a directory into index.db.
+	Short: "Index Markdown/HTML/reST files under a directory into index.db",
+	Long: `Index Markdown/HTML/reStructuredText files under a directory into index.db.
 
 --exclude accepts gitignore syntax patterns, matched against paths relative
 to <docs-dir> ("/foo.html" anchors to the root, "foo/" matches directories

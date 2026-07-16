@@ -7,8 +7,9 @@ allowed-tools: Bash(docidx search:*), Bash(docidx cat:*)
 # docidx
 
 Fast BM25 search over locally indexed documentation. `docidx build` splits
-Markdown/HTML files on their heading structure (one chunk per section or API
-method) into an SQLite FTS5 index; `search` and `cat` read it.
+Markdown/HTML/reStructuredText files on their heading structure (one chunk
+per section or API method) into an SQLite FTS5 index; `search` and `cat`
+read it.
 
 ## Workflow
 

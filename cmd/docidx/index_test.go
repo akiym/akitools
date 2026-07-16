@@ -39,6 +39,22 @@ Stops the running animation.
 Persist game state with FileAccess. Instancing is unrelated here but
 mentioned once in the body for ranking tests.
 `,
+		"classes/class_vector2.rst": `.. _class_Vector2:
+
+Vector2
+=======
+
+2D vector class used for math.
+
+Method Descriptions
+-------------------
+
+.. _class_Vector2_method_angle:
+
+float **angle**\ (\ )
+
+Returns the angle of the vector.
+`,
 	}
 	for name, content := range files {
 		path := filepath.Join(docs, filepath.FromSlash(name))
@@ -55,8 +71,8 @@ mentioned once in the body for ranking tests.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if nfiles != 3 {
-		t.Fatalf("indexed %d files, want 3", nfiles)
+	if nfiles != 4 {
+		t.Fatalf("indexed %d files, want 4", nfiles)
 	}
 	if nchunks == 0 {
 		t.Fatal("no chunks indexed")
