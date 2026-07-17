@@ -7,31 +7,34 @@ allowed-tools: Bash(cmdsbx do:*)
 # cmdsbx
 
 Run host-restricted or untrusted commands inside a throwaway Docker container.
-The container has no network, sees no host files, and is removed after the
-command exits. Exit code, stdout, and stderr propagate to the caller.
+The container has no network, sees no host files (except via `--mount-cwd-ro`,
+below), and is removed after the command exits. Exit code, stdout, and stderr
+propagate to the caller.
 
-## When to use
+## When to use `cmdsbx do`
 
 - The command is an interpreter or tool not allowed on the host (python, node, awk, ruby, perl, ...)
 - Running untrusted or freshly generated code snippets
 - Computing or verifying something where only the printed output matters
 - Read-only work over the project files (`--mount-cwd-ro`), e.g. running tests
 
-## When NOT to use
+## When NOT to use `cmdsbx do`
 
-- The command must write host files, or needs network access — see
-  "Host access" below
-- Interactive/TTY programs
+- Interactive/TTY programs (pagers, editors, prompts) — no supported invocation
+- The command must write host files or reach the network — `do` cannot; see **cmdsbx unsafe** below
 
-## Usage
+## Invocation
 
-`cmdsbx do` accepts only `--image`, `--env KEY=VALUE`, `--workdir`,
-`--mount-cwd-ro`, and `-i` (stream stdin in, like docker run -i). There is
-no way to mount arbitrary host paths or enable network from `do` — such
-flags are parse errors by design.
+`cmdsbx do` accepts only these flags; anything else is a parse error by design.
+
+- `--image IMAGE`     container image (default `ubuntu:24.04`)
+- `--env KEY=VALUE`   set an environment variable; repeat for multiple
+- `--workdir DIR`     working directory inside the container
+- `--mount-cwd-ro`    mount cwd read-only at the same path (see below)
+- `-i`                stream stdin into the container (needed for stdin-piped commands and heredocs)
 
 ```bash
-# bash snippet on the default image (ubuntu:24.04), no network, no host files
+# bash snippet on the default image, no network, no host files
 cmdsbx do -- bash -c 'seq 1 3 | while read i; do echo "line $i"; done'
 
 # python one-liner
@@ -40,21 +43,23 @@ cmdsbx do --image python:3.14-slim -- python3 -c 'print(1 + 2)'
 # node
 cmdsbx do --image node:24-slim -- node -e 'console.log(6 * 7)'
 
-# awk
+# awk with piped stdin
 echo "1\n2" | cmdsbx do -i -- awk '{ print $1 }'
 
 # pass code via stdin (-i required) to avoid shell-quoting issues
 echo 'print("hi")' | cmdsbx do -i --image python:3.14-slim -- python3 -
 
-# multi-line snippets: heredoc into stdin
+# multi-line snippet via heredoc (host shell handles the heredoc; -i required)
 cmdsbx do -i --image python:3.14-slim -- python3 - <<'EOF'
 import json
 print(json.dumps({"ok": True}))
 EOF
+
+# pass data via --env (repeatable)
+cmdsbx do --env NAME=world --env GREETING=hello -- bash -c 'echo "$GREETING $NAME"'
 ```
 
-Pass input data via stdin (requires `-i`) or `--env`; collect results
-from stdout.
+Pass input via stdin (with `-i`) or `--env`; collect results from stdout.
 
 ## Read-only project access: `--mount-cwd-ro`
 
@@ -66,35 +71,37 @@ at the same path and becomes the default workdir.
 cmdsbx do --mount-cwd-ro --image golang:1.26 -- go test ./...
 ```
 
-It only works through a broker that allows the directory (ccwrap starts a
-per-project one automatically); without one it fails with "requires a
-running broker" — fall back to asking the user rather than switching to
-`cmdsbx unsafe`. Writes to the mount fail with a read-only error; that is
-by design, not a bug to work around.
+Writes to the mount fail with a read-only error; that is by design.
 
-## Host writes and network require `cmdsbx unsafe`
+## Host writes and network: `cmdsbx unsafe`
 
-Writing to the host or network egress is the job of `cmdsbx unsafe`
-(e.g. `cmdsbx unsafe --rootfs "$PWD" --write -- go generate ./...`).
-It is intentionally NOT covered by this skill's allowed tools: using it
-prompts the user for approval. Only reach for it when the task genuinely
-needs host writes or network, say why in one sentence before running it,
-and never ask the user to allow `cmdsbx unsafe` unconditionally.
+When the task genuinely needs to write host files or reach the network,
+use `cmdsbx unsafe`. It is intentionally NOT in this skill's allowed-tools,
+so running it prompts the user for approval — that's the correct flow, not
+something to avoid.
 
-## Broker
+```bash
+# write back to the project (mount rw)
+cmdsbx unsafe --rootfs "$PWD" --write -- go generate ./...
 
-In sandboxed agent environments without Docker socket access, `cmdsbx do`
-transparently delegates the run to a `cmdsbx broker` daemon over a unix
-socket; usage is identical. ccwrap starts a per-session broker under
-`.claude/.ccwrap/` that also permits `--mount-cwd-ro` for the
-project directory. If `do` reports the broker socket is not reachable and
-docker fails with a socket permission error, the daemon is not running —
-ask the user to start `cmdsbx broker` (or relaunch via ccwrap) instead of
-trying `cmdsbx unsafe` or other workarounds.
+# network egress
+cmdsbx unsafe --allow-egress --image alpine -- wget -qO- https://example.com
+```
 
-## Rules
+Rules for `unsafe`:
 
-- Pick the smallest official image that has the needed interpreter (`python:3.14-slim`, `node:24-slim`, default `ubuntu:24.04` for shell tools)
-- If the command fails with "executable file not found", the image lacks the tool — switch images rather than installing packages
-- Do not use `cmdsbx run`/`exec` sessions here; one-shot `cmdsbx do` keeps cleanup automatic
-- `cmdsbx do` runs with `--pull=never`; if the image isn't already pulled it fails immediately. Ask the user to pull the image (e.g. `docker pull python:3.14-slim`) rather than auto-pulling arbitrary images from an agent context
+- Only reach for it when writes or network are actually required
+- State in one sentence why before running so the approval prompt is informed
+- Never ask the user to allowlist `cmdsbx unsafe` unconditionally
+
+## When it fails
+
+- `executable file not found` — the image lacks the tool. Switch to an image that has it; do not try to install packages at runtime.
+- image missing / `--pull=never` refusal — ask the user to `docker pull IMAGE`.
+- `--mount-cwd-ro` rejected — this environment does not permit read-only project mounts. If the task needs project reads, ask the user.
+- sandbox not reachable / docker socket permission error — the runtime is not available; ask the user.
+
+## Tips
+
+- Pick the smallest official image that already has the needed interpreter (`python:3.14-slim`, `node:24-slim`, default `ubuntu:24.04` for shell tools).
+- Only use `cmdsbx do` (and `unsafe` when justified) from this skill; `run`/`exec` sessions require manual cleanup and are out of scope.
