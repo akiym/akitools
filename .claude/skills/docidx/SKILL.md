@@ -6,38 +6,42 @@ allowed-tools: Bash(docidx search:*), Bash(docidx cat:*)
 
 # docidx
 
-Fast BM25 search over locally indexed documentation. `docidx build` splits
-Markdown/HTML/reStructuredText files on their heading structure (one chunk
-per section or API method) into an SQLite FTS5 index; `search` and `cat`
-read it.
+Fast BM25 search over locally indexed documentation. The index is an SQLite
+FTS5 database of doc chunks split on heading structure (one chunk per
+section or API entity). Two commands: `search` for candidates, `cat` to
+read them.
 
 ## Workflow
 
+1. `docidx search --db path/to/index.db <terms>` — get candidates (TSV)
+2. `docidx cat --db path/to/index.db <id> [<id>...]` — read the promising chunks by id
+3. `docidx cat --db path/to/index.db --path 'tutorials/instancing.md#anchor'` — or read the whole page
+
 ```bash
-docidx search --db path/to/index.db spawn enemy   # 1. get candidates (TSV)
-docidx cat --db path/to/index.db 42 43            # 2. read the promising chunks
-docidx cat --db path/to/index.db --path 'tutorials/instancing.md#anchor'  # 3. whole page
+docidx search --db path/to/index.db spawn enemy
+docidx cat --db path/to/index.db 42 43
+docidx cat --db path/to/index.db --path 'tutorials/instancing.md#anchor'
 ```
 
-`--db` defaults to `./index.db`. Multi-word queries are passed as separate
-args, no quoting needed. Favor recall: cat several small candidates at once
-rather than only the top hit. `cat --path` accepts the `path#anchor` column
-from search output as-is (the anchor is ignored) and prints the whole page.
+`--db` defaults to `./index.db`. Multi-word queries are separate args — no
+quoting needed. Favor recall: cat several small candidates at once rather
+than only the top hit. `cat --path` accepts the `path#anchor` column from
+search output as-is (the anchor part is ignored) and prints the whole page.
 
 ## search output (TSV)
 
 Columns: `id`, `score`, `kind`, `body bytes`, `path#anchor`, `title`
 
-- `score`: higher is better. Rows matching ALL query terms come first; rows
-  after the `# or-fallback: ...` marker line match only some terms. Scores
-  restart at the marker — compare scores only within each group.
-- `kind`: e.g. `api` / `class` / `method` / `tutorial` / `guide` / `faq` /
+- `score` — higher is better. Rows matching ALL query terms come first;
+  rows after the `# or-fallback: ...` marker line match only some terms.
+  Scores restart at the marker — compare scores only within each group.
+- `kind` — e.g. `api` / `class` / `method` / `tutorial` / `guide` / `faq` /
   `doc`; which ones appear depends on the indexed docs.
-- `body bytes`: check before cat. Large chunks (over ~10KB) are usually
+- `body bytes` — check before cat. Large chunks (over ~10KB) are usually
   aggregate listings (member tables, section indexes) — prefer small,
-  specific chunks first. But in API-reference indexes the aggregate table is
-  sometimes the only place a signature appears, so fall back to it when the
-  small chunks don't have the answer.
+  specific chunks first. But in API-reference indexes the aggregate table
+  is sometimes the only place a signature appears, so fall back to it when
+  the small chunks don't have the answer.
 
 ## Query tips
 
@@ -50,18 +54,11 @@ Columns: `id`, `score`, `kind`, `body bytes`, `path#anchor`, `title`
 - If a natural-language query returns scattered results, pick an identifier
   from any promising hit and search again with it.
 - An `aliases.json` next to the index expands query terms automatically
-  (e.g. `{"spawn": ["instantiate", "PackedScene"]}`).
+  (e.g. `{"spawn": ["instantiate", "PackedScene"]}`) — you don't need to
+  expand synonyms manually when it's present.
 
-## Building an index
+## When it fails
 
-`docidx build` deletes and recreates the `--db` file, so it is intentionally
-not pre-approved. Run it only when the user asks to index docs:
-
-```bash
-docidx build docs/ --db index.db
-# doxygen output — skip source listings and member tables:
-docidx build html/ --db index.db --exclude '*_source.html' --exclude '*-members.html'
-```
-
-`--exclude` takes gitignore-syntax patterns relative to the docs dir,
-repeatable.
+- `no results` — a normal miss; recover via the query tips above.
+- db file missing / `no such file` — no index at that path. Ask the user where the index lives; building one is out of scope for this skill.
+- `no such table` or schema error — the file is not a docidx index. Ask the user.
