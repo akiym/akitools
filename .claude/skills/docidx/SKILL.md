@@ -11,6 +11,10 @@ FTS5 database of doc chunks split on heading structure (one chunk per
 section or API entity). Two commands: `search` for candidates, `cat` to
 read them.
 
+Run `docidx` directly on the host — do NOT wrap it in `cmdsbx`. The CLI is
+allowed on the host and reads a local db file; the sandbox would only get
+in the way.
+
 ## Workflow
 
 1. `docidx search --db path/to/index.db <terms>` — get candidates (TSV)
