@@ -69,12 +69,7 @@ func (s *stringList) Set(v string) error {
 	return nil
 }
 
-func defaultImage() string {
-	if v := os.Getenv("SANDBOX_IMAGE"); v != "" {
-		return v
-	}
-	return "ubuntu:24.04"
-}
+const defaultImage = "ubuntu:24.04"
 
 func newFlagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -85,7 +80,7 @@ func newFlagSet(name string) *flag.FlagSet {
 // addSafeFlags registers the flags `cmdsbx do` is allowed to expose;
 // the isolation-weakening commands add theirs via addRunFlags.
 func addSafeFlags(fs *flag.FlagSet, o *RunOptions) {
-	fs.StringVar(&o.Image, "image", defaultImage(), "container image (env: SANDBOX_IMAGE)")
+	fs.StringVar(&o.Image, "image", defaultImage, "container image")
 	fs.StringVar(&o.Workdir, "workdir", "", "working directory inside the container")
 	fs.Var((*stringList)(&o.Env), "env", "environment variable KEY=VALUE (repeatable)")
 }
