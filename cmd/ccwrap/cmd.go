@@ -185,6 +185,16 @@ func run(args []string) (int, error) {
 		return 1, nil
 	}
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		return 1, fmt.Errorf("getwd: %w", err)
+	}
+	timestamp := time.Now().Format("20060102-150405")
+	brokerSocket, stopBroker := startBroker(cwd, timestamp)
+	if stopBroker != nil {
+		defer stopBroker()
+	}
+
 	workspace, err := workspaceName()
 	if err != nil {
 		return 1, fmt.Errorf("workspace: %w", err)
@@ -205,7 +215,6 @@ func run(args []string) (int, error) {
 		return 1, fmt.Errorf("find free port: %w", err)
 	}
 
-	timestamp := time.Now().Format("20060102-150405")
 	mitmFile := filepath.Join(logDir, timestamp+".mitm")
 	harFile := filepath.Join(logDir, timestamp+".har")
 	lockFile := filepath.Join(logDir, timestamp+".lock")
@@ -249,9 +258,13 @@ func run(args []string) (int, error) {
 	claude.Stdin = os.Stdin
 	claude.Stdout = os.Stdout
 	claude.Stderr = os.Stderr
-	claude.Env = append(filterEnv(os.Environ(), "ANTHROPIC_BASE_URL"),
+	env := append(filterEnv(os.Environ(), "ANTHROPIC_BASE_URL"),
 		fmt.Sprintf("ANTHROPIC_BASE_URL=http://127.0.0.1:%d", port),
 	)
+	if brokerSocket != "" {
+		env = append(filterEnv(env, "SANDBOX_BROKER_SOCKET"), "SANDBOX_BROKER_SOCKET="+brokerSocket)
+	}
+	claude.Env = env
 
 	if err := claude.Start(); err != nil {
 		cleanupMitmdump()

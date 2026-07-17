@@ -163,6 +163,12 @@ func TestFindSandboxConcernsSafeSettings(t *testing.T) {
 			},
 			"network": map[string]any{
 				"deniedDomains": []any{"example.com"},
+				"allowUnixSockets": []any{
+					ccwrapDirRel,
+					cwd + "/" + ccwrapDirRel,
+					ccwrapDirRel + "/broker-ab12cd34.sock",
+					cwd + "/" + ccwrapDirRel + "/broker-ab12cd34.sock",
+				},
 			},
 		},
 	}
@@ -186,6 +192,11 @@ func TestFindSandboxConcernsRelaxations(t *testing.T) {
 			},
 			"network": map[string]any{
 				"allowedDomains": []any{"*"},
+				"allowUnixSockets": []any{
+					ccwrapDirRel,
+					"/var/run/docker.sock",
+					ccwrapDirRel + "/../../../var/run/docker.sock",
+				},
 			},
 			"unknownFalsyKey":  false,
 			"unknownFutureKey": "on",
@@ -197,6 +208,7 @@ func TestFindSandboxConcernsRelaxations(t *testing.T) {
 		"sandbox.enabled",
 		"sandbox.excludedCommands",
 		"sandbox.filesystem.allowRead",
+		"sandbox.network.allowUnixSockets",
 		"sandbox.network.allowedDomains",
 		"sandbox.unknownFalsyKey",
 		"sandbox.unknownFutureKey",
@@ -205,9 +217,15 @@ func TestFindSandboxConcernsRelaxations(t *testing.T) {
 		t.Errorf("concerns = %v, want %v", got, want)
 	}
 	for _, c := range concerns {
-		if c.path == "sandbox.filesystem.allowRead" {
+		switch c.path {
+		case "sandbox.filesystem.allowRead":
 			if !reflect.DeepEqual(c.value, []any{"~/.config/gcloud", "../escape"}) {
 				t.Errorf("allowRead concern = %v, want only paths outside cwd", c.value)
+			}
+		case "sandbox.network.allowUnixSockets":
+			want := []any{"/var/run/docker.sock", ccwrapDirRel + "/../../../var/run/docker.sock"}
+			if !reflect.DeepEqual(c.value, want) {
+				t.Errorf("allowUnixSockets concern = %v, want %v", c.value, want)
 			}
 		}
 	}
@@ -232,7 +250,7 @@ func readLocalSettings(t *testing.T, dir string) map[string]any {
 	return settings
 }
 
-func writeLocalSettings(t *testing.T, dir, content string) string {
+func writeLocalSettings(t *testing.T, dir, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
@@ -241,7 +259,22 @@ func writeLocalSettings(t *testing.T, dir, content string) string {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return path
+}
+
+func assertTargetSandbox(t *testing.T, settings map[string]any) {
+	t.Helper()
+	sandbox := settings["sandbox"].(map[string]any)
+	fs := sandbox["filesystem"].(map[string]any)
+	if want := []any{".", ccwrapDirRel}; !reflect.DeepEqual(fs["allowRead"], want) {
+		t.Errorf("allowRead = %v, want %v", fs["allowRead"], want)
+	}
+	if want := []any{"."}; !reflect.DeepEqual(fs["allowWrite"], want) {
+		t.Errorf("allowWrite = %v, want %v", fs["allowWrite"], want)
+	}
+	network := sandbox["network"].(map[string]any)
+	if want := []any{ccwrapDirRel}; !reflect.DeepEqual(network["allowUnixSockets"], want) {
+		t.Errorf("allowUnixSockets = %v, want %v", network["allowUnixSockets"], want)
+	}
 }
 
 func TestEnsureLocalSandboxSettingsCreate(t *testing.T) {
@@ -252,14 +285,25 @@ func TestEnsureLocalSandboxSettingsCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	settings := readLocalSettings(t, dir)
-	fs := settings["sandbox"].(map[string]any)["filesystem"].(map[string]any)
-	want := []any{"."}
-	if !reflect.DeepEqual(fs["allowRead"], want) {
-		t.Errorf("allowRead = %v, want %v", fs["allowRead"], want)
+	assertTargetSandbox(t, readLocalSettings(t, dir))
+}
+
+func TestEnsureLocalSandboxSettingsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	if err := ensureLocalSandboxSettings(); err != nil {
+		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(fs["allowWrite"], want) {
-		t.Errorf("allowWrite = %v, want %v", fs["allowWrite"], want)
+	path := filepath.Join(dir, ".claude", "settings.local.json")
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(path, 0o644) })
+
+	// 現行形式のままなら書き込みは発生しない(読み取り専用でも成功する)
+	if err := ensureLocalSandboxSettings(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -291,19 +335,45 @@ func TestEnsureLocalSandboxSettingsPreservesExistingKeys(t *testing.T) {
 func TestEnsureLocalSandboxSettingsSkipsCustomFilesystem(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
-	existing := `{"sandbox":{"filesystem":{"allowRead":["/custom"]}}}`
-	path := writeLocalSettings(t, dir, existing)
+	writeLocalSettings(t, dir, `{"sandbox":{"filesystem":{"allowRead":["/custom"]}}}`)
 
 	if err := ensureLocalSandboxSettings(); err != nil {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
+	settings := readLocalSettings(t, dir)
+	sandbox := settings["sandbox"].(map[string]any)
+	fs := sandbox["filesystem"].(map[string]any)
+	if want := []any{"/custom"}; !reflect.DeepEqual(fs["allowRead"], want) {
+		t.Errorf("custom allowRead was modified: %v", fs["allowRead"])
+	}
+	// filesystemがカスタムでもnetworkは独立に追加される
+	network := sandbox["network"].(map[string]any)
+	if want := []any{ccwrapDirRel}; !reflect.DeepEqual(network["allowUnixSockets"], want) {
+		t.Errorf("allowUnixSockets = %v, want %v", network["allowUnixSockets"], want)
+	}
+}
+
+func TestEnsureLocalSandboxSettingsKeepsCustomNetwork(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	writeLocalSettings(t, dir, `{"sandbox":{"network":{"allowedDomains":["example.com"]}}}`)
+
+	if err := ensureLocalSandboxSettings(); err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != existing {
-		t.Errorf("file was modified: %s", data)
+
+	settings := readLocalSettings(t, dir)
+	sandbox := settings["sandbox"].(map[string]any)
+	network := sandbox["network"].(map[string]any)
+	if want := []any{"example.com"}; !reflect.DeepEqual(network["allowedDomains"], want) {
+		t.Errorf("custom network was modified: %v", network)
+	}
+	if _, exists := network["allowUnixSockets"]; exists {
+		t.Errorf("custom network must not be extended: %v", network)
+	}
+	if _, exists := sandbox["filesystem"]; !exists {
+		t.Error("filesystem was not added")
 	}
 }
 
@@ -316,15 +386,33 @@ func TestEnsureLocalSandboxSettingsUpdatesStalePath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	settings := readLocalSettings(t, dir)
-	fs := settings["sandbox"].(map[string]any)["filesystem"].(map[string]any)
-	want := []any{"."}
-	if !reflect.DeepEqual(fs["allowRead"], want) {
-		t.Errorf("allowRead = %v, want %v", fs["allowRead"], want)
+	assertTargetSandbox(t, readLocalSettings(t, dir))
+}
+
+func TestEnsureLocalSandboxSettingsMigratesDotOnly(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	writeLocalSettings(t, dir, `{"sandbox":{"filesystem":{"allowRead":["."],"allowWrite":["."]}}}`)
+
+	if err := ensureLocalSandboxSettings(); err != nil {
+		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(fs["allowWrite"], want) {
-		t.Errorf("allowWrite = %v, want %v", fs["allowWrite"], want)
+
+	assertTargetSandbox(t, readLocalSettings(t, dir))
+}
+
+func TestEnsureLocalSandboxSettingsMigratesFixedSocket(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	writeLocalSettings(t, dir, `{"sandbox":{
+		"filesystem":{"allowRead":[".",".claude/.ccwrap/broker.sock"],"allowWrite":["."]},
+		"network":{"allowUnixSockets":[".claude/.ccwrap/broker.sock"]}}}`)
+
+	if err := ensureLocalSandboxSettings(); err != nil {
+		t.Fatal(err)
 	}
+
+	assertTargetSandbox(t, readLocalSettings(t, dir))
 }
 
 func TestEnsureLocalSandboxSettingsInvalidSandbox(t *testing.T) {
@@ -373,6 +461,8 @@ func TestFindAutoLoadedFiles(t *testing.T) {
 	writeTestFiles(t, dir, []string{
 		".claude/settings.json",
 		".claude/settings.local.json",
+		".claude/.ccwrap/.gitignore",
+		".claude/.ccwrap/broker-ab12cd34.sock",
 		".claude/CLAUDE.md",
 		".claude/commands/deploy.md",
 		".claude/rules/style.md",
@@ -447,24 +537,26 @@ func TestFindAutoLoadedFilesClaudeNotDir(t *testing.T) {
 	}
 }
 
-func TestManagedFilesystemPath(t *testing.T) {
+func TestManagedFilesystem(t *testing.T) {
 	tests := []struct {
 		name string
 		fs   any
-		want string
-		ok   bool
+		want bool
 	}{
-		{"managed", map[string]any{"allowRead": []any{"/p"}, "allowWrite": []any{"/p"}}, "/p", true},
-		{"differentPaths", map[string]any{"allowRead": []any{"/a"}, "allowWrite": []any{"/b"}}, "", false},
-		{"extraKey", map[string]any{"allowRead": []any{"/p"}, "allowWrite": []any{"/p"}, "denyRead": []any{"/x"}}, "", false},
-		{"multipleEntries", map[string]any{"allowRead": []any{"/p", "/q"}, "allowWrite": []any{"/p"}}, "", false},
-		{"readOnly", map[string]any{"allowRead": []any{"/p"}}, "", false},
-		{"notMap", true, "", false},
+		{"legacyAbs", map[string]any{"allowRead": []any{"/p"}, "allowWrite": []any{"/p"}}, true},
+		{"legacyDot", map[string]any{"allowRead": []any{"."}, "allowWrite": []any{"."}}, true},
+		{"legacyBrokerSock", map[string]any{"allowRead": []any{".", legacyBrokerSocketRel}, "allowWrite": []any{"."}}, true},
+		{"current", map[string]any{"allowRead": []any{".", ccwrapDirRel}, "allowWrite": []any{"."}}, true},
+		{"differentPaths", map[string]any{"allowRead": []any{"/a"}, "allowWrite": []any{"/b"}}, false},
+		{"extraKey", map[string]any{"allowRead": []any{"/p"}, "allowWrite": []any{"/p"}, "denyRead": []any{"/x"}}, false},
+		{"multipleEntries", map[string]any{"allowRead": []any{"/p", "/q"}, "allowWrite": []any{"/p"}}, false},
+		{"readOnly", map[string]any{"allowRead": []any{"/p"}}, false},
+		{"otherSocket", map[string]any{"allowRead": []any{".", "/tmp/x.sock"}, "allowWrite": []any{"."}}, false},
+		{"notMap", true, false},
 	}
 	for _, tt := range tests {
-		got, ok := managedFilesystemPath(tt.fs)
-		if got != tt.want || ok != tt.ok {
-			t.Errorf("%s: managedFilesystemPath = (%q, %v), want (%q, %v)", tt.name, got, ok, tt.want, tt.ok)
+		if got := managedFilesystem(tt.fs); got != tt.want {
+			t.Errorf("%s: managedFilesystem = %v, want %v", tt.name, got, tt.want)
 		}
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -99,8 +100,9 @@ func pathWithinDir(path, dir, home string) bool {
 
 // findSandboxConcerns はプロジェクト側の設定からサンドボックスの制限を
 // 緩和しうる項目を集める。安全と確定できるもの(deny系、enabled: true、
-// cwd配下のallowRead/allowWrite)だけを除外し、それ以外は未知のキーも
-// 含めて値にかかわらずすべて報告する
+// cwd配下のallowRead/allowWrite、ccwrap管理のbroker socketへの
+// allowUnixSockets)だけを除外し、それ以外は未知のキーも含めて値に
+// かかわらずすべて報告する
 func findSandboxConcerns(file string, settings map[string]any, cwd, home string) []sandboxConcern {
 	sandbox, ok := settings["sandbox"].(map[string]any)
 	if !ok {
@@ -151,16 +153,58 @@ func findSandboxConcerns(file string, settings map[string]any, cwd, home string)
 				continue
 			}
 			for _, nkey := range sortedKeys(network) {
-				if nkey == "deniedDomains" {
+				nval := network[nkey]
+				switch nkey {
+				case "deniedDomains":
 					continue
+				case "allowUnixSockets":
+					if other := nonBrokerSockets(nval, cwd); len(other) > 0 {
+						add(key+"."+nkey, other)
+					}
+				default:
+					add(key+"."+nkey, nval)
 				}
-				add(key+"."+nkey, network[nkey])
 			}
 		default:
 			add(key, value)
 		}
 	}
 	return concerns
+}
+
+// legacyBrokerSocketRel は旧バージョンのccwrapが書いた固定socketパス。
+// 現行はsocket名がセッションごとに変わるためディレクトリ単位で許可する
+const legacyBrokerSocketRel = ccwrapDirRel + "/broker.sock"
+
+// nonBrokerSockets はallowUnixSocketsからccwrap管理ディレクトリ自体と
+// その配下(プロジェクト相対またはcwd絶対形)以外の要素を返す
+func nonBrokerSockets(v any, cwd string) []any {
+	entries, ok := v.([]any)
+	if !ok {
+		return []any{v}
+	}
+	absDir := filepath.Join(cwd, ccwrapDirRel)
+	var other []any
+	for _, e := range entries {
+		s, ok := e.(string)
+		if !ok || !withinCcwrapDir(s, absDir) {
+			other = append(other, e)
+		}
+	}
+	return other
+}
+
+func withinCcwrapDir(s, absDir string) bool {
+	cleaned := filepath.Clean(s)
+	base := ccwrapDirRel
+	if filepath.IsAbs(cleaned) {
+		base = absDir
+	}
+	rel, err := filepath.Rel(base, cleaned)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 func pathsOutsideDir(v any, dir, home string) []any {
@@ -210,7 +254,9 @@ func readLine(r io.Reader) (string, error) {
 // CLAUDE.mdなど。サブディレクトリの .claude はdirectory-scoped skillsとして
 // 遅延発見される)、各階層の CLAUDE.md / CLAUDE.local.md、ルートの .mcp.json。
 // ルート直下の settings.json / settings.local.json はconfirmSettingsが中身を
-// 検査するうえ、settings.local.jsonはccwrap自身も書き込むため除外する
+// 検査するうえ、settings.local.jsonはccwrap自身も書き込むため除外する。
+// .claude/.ccwrap はccwrap自身の管理ディレクトリで、並行セッションの
+// socket(hash不能)が置かれるため対象外
 func findAutoLoadedFiles(cwd string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(cwd, func(path string, d fs.DirEntry, err error) error {
@@ -219,6 +265,9 @@ func findAutoLoadedFiles(cwd string) ([]string, error) {
 		}
 		if d.IsDir() {
 			if d.Name() == ".git" && path != cwd {
+				return fs.SkipDir
+			}
+			if d.Name() == ".ccwrap" && filepath.Base(filepath.Dir(path)) == ".claude" {
 				return fs.SkipDir
 			}
 			return nil
@@ -402,31 +451,84 @@ func confirmSettings() (bool, error) {
 	return false, nil
 }
 
-// managedFilesystemPath は sandbox.filesystem が ccwrap の書き込んだ形
-// (allowRead/allowWriteのみ、同一パス1つずつ)かを判定し、そのパスを返す
-func managedFilesystemPath(fs any) (string, bool) {
+// managedFilesystem は sandbox.filesystem が ccwrap の書き込んだ形
+// (現行の broker.sock 入り、または旧来の同一パス1つずつ)かを判定する。
+// managed であれば現行の形へ書き換えてよい
+func managedFilesystem(fs any) bool {
 	m, ok := fs.(map[string]any)
 	if !ok || len(m) != 2 {
-		return "", false
+		return false
 	}
-	read, ok := singleString(m["allowRead"])
+	read, ok := stringSlice(m["allowRead"])
 	if !ok {
-		return "", false
+		return false
 	}
-	write, ok := singleString(m["allowWrite"])
-	if !ok || read != write {
-		return "", false
+	write, ok := stringSlice(m["allowWrite"])
+	if !ok {
+		return false
 	}
-	return read, true
+	// 旧形式: allowRead/allowWriteに同一パス("."または絶対パス)1つずつ
+	if len(read) == 1 && len(write) == 1 && read[0] == write[0] {
+		return true
+	}
+	// 現行形式と、固定socketパスだった旧broker形式
+	return len(read) == 2 && read[0] == "." && managedCcwrapEntry(read[1]) &&
+		slices.Equal(write, []string{"."})
 }
 
-func singleString(v any) (string, bool) {
-	arr, ok := v.([]any)
-	if !ok || len(arr) != 1 {
-		return "", false
+func managedCcwrapEntry(s string) bool {
+	return s == ccwrapDirRel || s == legacyBrokerSocketRel
+}
+
+func isTargetFilesystem(read, write []string) bool {
+	return slices.Equal(read, []string{".", ccwrapDirRel}) &&
+		slices.Equal(write, []string{"."})
+}
+
+func isTargetFilesystemValue(v any) bool {
+	m, ok := v.(map[string]any)
+	if !ok || len(m) != 2 {
+		return false
 	}
-	s, ok := arr[0].(string)
-	return s, ok
+	read, rok := stringSlice(m["allowRead"])
+	write, wok := stringSlice(m["allowWrite"])
+	return rok && wok && isTargetFilesystem(read, write)
+}
+
+// managedNetwork は sandbox.network が ccwrap の書き込んだ形
+// (allowUnixSocketsのみ、ccwrap管理エントリ1つ)かを判定する
+func managedNetwork(v any) bool {
+	m, ok := v.(map[string]any)
+	if !ok || len(m) != 1 {
+		return false
+	}
+	socks, ok := stringSlice(m["allowUnixSockets"])
+	return ok && len(socks) == 1 && managedCcwrapEntry(socks[0])
+}
+
+func isTargetNetworkValue(v any) bool {
+	m, ok := v.(map[string]any)
+	if !ok || len(m) != 1 {
+		return false
+	}
+	socks, ok := stringSlice(m["allowUnixSockets"])
+	return ok && slices.Equal(socks, []string{ccwrapDirRel})
+}
+
+func stringSlice(v any) ([]string, bool) {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, 0, len(arr))
+	for _, e := range arr {
+		s, ok := e.(string)
+		if !ok {
+			return nil, false
+		}
+		out = append(out, s)
+	}
+	return out, true
 }
 
 func ensureLocalSandboxSettings() error {
@@ -460,17 +562,24 @@ func ensureLocalSandboxSettings() error {
 		sandbox = map[string]any{}
 		settings["sandbox"] = sandbox
 	}
-	if fs, exists := sandbox["filesystem"]; exists {
-		// ccwrap自身が書いた形なら旧形式(絶対パス)を"."へ移行する。
-		// ユーザーがカスタマイズした形には触れない
-		p, managed := managedFilesystemPath(fs)
-		if !managed || p == "." {
-			return nil
+	changed := false
+	// ccwrap自身が書いた形(旧形式含む)なら現行の形へ移行する。
+	// ユーザーがカスタマイズした形には触れない
+	if fs, exists := sandbox["filesystem"]; !exists || (managedFilesystem(fs) && !isTargetFilesystemValue(fs)) {
+		sandbox["filesystem"] = map[string]any{
+			"allowRead":  []string{".", ccwrapDirRel},
+			"allowWrite": []string{"."},
 		}
+		changed = true
 	}
-	sandbox["filesystem"] = map[string]any{
-		"allowRead":  []string{"."},
-		"allowWrite": []string{"."},
+	if v, exists := sandbox["network"]; !exists || (managedNetwork(v) && !isTargetNetworkValue(v)) {
+		sandbox["network"] = map[string]any{
+			"allowUnixSockets": []string{ccwrapDirRel},
+		}
+		changed = true
+	}
+	if !changed {
+		return nil
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

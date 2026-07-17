@@ -3,6 +3,7 @@ package cmdsbx
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -97,6 +98,48 @@ func TestMainUnsafeDoesNotUsePullNever(t *testing.T) {
 	}
 	if containsPair(calls[0], "--pull", "never") {
 		t.Errorf("unsafe should still allow implicit pulls: %q", calls[0])
+	}
+}
+
+func TestMainDoMountCwdRequiresBroker(t *testing.T) {
+	quietStderr(t)
+	noBroker(t)
+	var calls [][]string
+	stubExecCommand(t, &calls)
+
+	if code := Main([]string{"do", "--mount-cwd-ro", "--", "true"}); code != 2 {
+		t.Errorf("exit = %d, want 2", code)
+	}
+	if len(calls) != 0 {
+		t.Errorf("docker must not run without a broker: %q", calls)
+	}
+}
+
+func TestMainDoMountCwdSendsRootfs(t *testing.T) {
+	var rec callRecorder
+	stubExecCommandContext(t, &rec, "true")
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := testBrokerConfig
+	cfg.allowRootfs = resolved
+	sock := startBroker(t, cfg)
+	t.Setenv("SANDBOX_BROKER_SOCKET", sock)
+
+	if code := Main([]string{"do", "--mount-cwd-ro", "--", "true"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	calls := rec.all()
+	if len(calls) != 1 {
+		t.Fatalf("docker invocations = %d, want 1", len(calls))
+	}
+	if !containsPair(calls[0], "-v", resolved+":"+resolved+":ro") {
+		t.Errorf("missing read-only cwd mount: %q", calls[0])
 	}
 }
 

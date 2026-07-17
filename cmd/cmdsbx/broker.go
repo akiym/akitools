@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -42,11 +43,15 @@ const (
 // brokerRequest is the only shape the broker accepts. Adding a field here
 // widens what sandboxed clients can request; anything isolation-weakening
 // belongs to `cmdsbx unsafe`, which the broker deliberately cannot run.
+// Rootfs is the one concession: it is honored only when the broker was
+// started with an allowed directory, is confined to that directory's
+// subtree, and always mounts read-only.
 type brokerRequest struct {
 	Image   string   `json:"image"`
 	Command []string `json:"command"`
 	Env     []string `json:"env,omitempty"`
 	Workdir string   `json:"workdir,omitempty"`
+	Rootfs  string   `json:"rootfs,omitempty"`
 }
 
 type brokerExit struct {
@@ -59,7 +64,32 @@ type brokerConfig struct {
 	memory        string
 	pidsLimit     int
 	maxConcurrent int
-	logger        *slog.Logger
+	// allowRootfs is the symlink-resolved directory whose subtree clients
+	// may request as a read-only rootfs mount; empty rejects all requests.
+	allowRootfs string
+	logger      *slog.Logger
+}
+
+// BrokerOptions configures a broker embedded via ListenBroker/Serve.
+type BrokerOptions struct {
+	Timeout       time.Duration
+	Memory        string // "" disables the memory limit
+	PidsLimit     int    // 0 disables the pids limit
+	MaxConcurrent int
+	// AllowRootfs is a symlink-resolved absolute directory whose subtree
+	// clients may request as a read-only rootfs mount ("" rejects all).
+	AllowRootfs string
+	Logger      *slog.Logger
+}
+
+// DefaultBrokerOptions returns the limits `cmdsbx broker` defaults to.
+func DefaultBrokerOptions() BrokerOptions {
+	return BrokerOptions{
+		Timeout:       5 * time.Minute,
+		Memory:        "2g",
+		PidsLimit:     1024,
+		MaxConcurrent: 8,
+	}
 }
 
 func xdgStateDir() string {
@@ -105,16 +135,17 @@ func brokerLogPath() string {
 var execCommandContext = exec.CommandContext
 
 func cmdBroker(args []string) int {
-	var cfg brokerConfig
+	opts := DefaultBrokerOptions()
 	fs := newFlagSet("cmdsbx broker")
 	socket := fs.String("socket", brokerSocketPath(), "unix socket to listen on (env: SANDBOX_BROKER_SOCKET)")
 	logPath := fs.String("log", brokerLogPath(), "request log file (empty to log to stderr)")
-	fs.DurationVar(&cfg.timeout, "timeout", 5*time.Minute, "hard timeout per command")
-	fs.StringVar(&cfg.memory, "memory", "2g", "container memory limit (empty to disable)")
-	fs.IntVar(&cfg.pidsLimit, "pids-limit", 1024, "container pids limit (0 to disable)")
-	fs.IntVar(&cfg.maxConcurrent, "max-concurrent", 8, "max concurrent commands")
+	fs.DurationVar(&opts.Timeout, "timeout", opts.Timeout, "hard timeout per command")
+	fs.StringVar(&opts.Memory, "memory", opts.Memory, "container memory limit (empty to disable)")
+	fs.IntVar(&opts.PidsLimit, "pids-limit", opts.PidsLimit, "container pids limit (0 to disable)")
+	fs.IntVar(&opts.MaxConcurrent, "max-concurrent", opts.MaxConcurrent, "max concurrent commands")
+	allowRootfs := fs.String("allow-rootfs", "", "host directory whose subtree clients may request as a read-only rootfs mount")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: cmdsbx broker [options]\n\nServe 'cmdsbx do' requests over a unix socket so that sandboxed\nclients can run disposable containers without access to the Docker\nsocket. Only no-mount, no-network, no-pull runs can be requested.\n\nOptions:\n")
+		fmt.Fprint(os.Stderr, "Usage: cmdsbx broker [options]\n\nServe 'cmdsbx do' requests over a unix socket so that sandboxed\nclients can run disposable containers without access to the Docker\nsocket. Only no-mount, no-network, no-pull runs can be requested,\nplus read-only rootfs mounts under -allow-rootfs when set.\n\nOptions:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -127,8 +158,19 @@ func cmdBroker(args []string) int {
 	if *socket == "" {
 		return fail(errors.New("cannot determine broker socket path"))
 	}
-	if cfg.maxConcurrent < 1 {
+	if opts.MaxConcurrent < 1 {
 		return fail(errors.New("--max-concurrent must be at least 1"))
+	}
+	if *allowRootfs != "" {
+		abs, err := filepath.Abs(*allowRootfs)
+		if err != nil {
+			return fail(fmt.Errorf("-allow-rootfs: %w", err))
+		}
+		resolved, err := filepath.EvalSymlinks(abs)
+		if err != nil {
+			return fail(fmt.Errorf("-allow-rootfs: %w", err))
+		}
+		opts.AllowRootfs = resolved
 	}
 	logDest := io.Writer(os.Stderr)
 	if *logPath != "" {
@@ -142,48 +184,84 @@ func cmdBroker(args []string) int {
 		defer logFile.Close()
 		logDest = logFile
 	}
-	cfg.logger = slog.New(slog.NewJSONHandler(logDest, nil))
-	// The socket must never be connectable by other users, even in the
-	// window before the post-Listen chmod: mask group/other bits at
-	// creation and tighten a pre-existing socket directory.
+	opts.Logger = slog.New(slog.NewJSONHandler(logDest, nil))
+	// Mask group/other bits so nothing the daemon creates (the socket
+	// included, even in the window before ListenBroker's chmod) is ever
+	// accessible to other users.
 	syscall.Umask(0o077)
-	if err := os.MkdirAll(filepath.Dir(*socket), 0o700); err != nil {
-		return fail(err)
-	}
-	if err := os.Chmod(filepath.Dir(*socket), 0o700); err != nil {
-		return fail(err)
-	}
-	if _, err := os.Stat(*socket); err == nil {
-		if conn, err := net.Dial("unix", *socket); err == nil {
-			conn.Close()
-			return fail(fmt.Errorf("broker already running on %s", *socket))
-		}
-		if err := os.Remove(*socket); err != nil {
-			return fail(err)
-		}
-	}
-	ln, err := net.Listen("unix", *socket)
+	b, err := ListenBroker(*socket)
 	if err != nil {
-		return fail(err)
-	}
-	if err := os.Chmod(*socket, 0o600); err != nil {
-		ln.Close()
 		return fail(err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go func() {
-		<-ctx.Done()
-		ln.Close()
-	}()
-	cfg.logger.Info("listening", "socket", *socket)
-	code := serveListener(ctx, ln, cfg)
-	cfg.logger.Info("shutting down")
-	os.Remove(*socket)
-	return code
+	b.Serve(ctx, opts)
+	return 0
 }
 
-func serveListener(ctx context.Context, ln net.Listener, cfg brokerConfig) int {
+// Broker is a listening broker socket ready to Serve.
+type Broker struct {
+	ln     net.Listener
+	socket string
+}
+
+// ListenBroker prepares the socket directory and binds the broker
+// socket, so that startup failures (another live broker, an unwritable
+// directory) surface before Serve is spawned in the background. The
+// directory is created (and, when pre-existing, tightened) to 0700 so
+// other users cannot reach the socket even before its own chmod.
+func ListenBroker(socket string) (*Broker, error) {
+	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(filepath.Dir(socket), 0o700); err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(socket); err == nil {
+		if conn, err := net.Dial("unix", socket); err == nil {
+			conn.Close()
+			return nil, fmt.Errorf("broker already running on %s", socket)
+		}
+		if err := os.Remove(socket); err != nil {
+			return nil, err
+		}
+	}
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(socket, 0o600); err != nil {
+		ln.Close()
+		return nil, err
+	}
+	return &Broker{ln: ln, socket: socket}, nil
+}
+
+// Serve accepts requests until ctx is cancelled, then removes the
+// socket. MaxConcurrent must be at least 1.
+func (b *Broker) Serve(ctx context.Context, opts BrokerOptions) {
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	go func() {
+		<-ctx.Done()
+		b.ln.Close()
+	}()
+	logger.Info("listening", "socket", b.socket)
+	serveListener(ctx, b.ln, brokerConfig{
+		timeout:       opts.Timeout,
+		memory:        opts.Memory,
+		pidsLimit:     opts.PidsLimit,
+		maxConcurrent: opts.MaxConcurrent,
+		allowRootfs:   opts.AllowRootfs,
+		logger:        logger,
+	})
+	logger.Info("shutting down")
+	os.Remove(b.socket)
+}
+
+func serveListener(ctx context.Context, ln net.Listener, cfg brokerConfig) {
 	sem := make(chan struct{}, cfg.maxConcurrent)
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -191,7 +269,7 @@ func serveListener(ctx context.Context, ln net.Listener, cfg brokerConfig) int {
 		conn, err := ln.Accept()
 		if err != nil {
 			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
-				return 0
+				return
 			}
 			// Transient failures (EMFILE, ECONNABORTED) must not kill
 			// the daemon; back off and keep accepting.
@@ -227,8 +305,17 @@ func serveConn(ctx context.Context, conn net.Conn, cfg brokerConfig) {
 		return
 	}
 	_ = conn.SetReadDeadline(time.Time{})
+	rootfs := ""
+	if req.Rootfs != "" {
+		rootfs, err = allowedRootfs(req.Rootfs, cfg.allowRootfs)
+		if err != nil {
+			writeExit(fw, 2, err.Error())
+			return
+		}
+	}
 	o := &RunOptions{
 		Image:     req.Image,
+		Rootfs:    rootfs,
 		Workdir:   req.Workdir,
 		Env:       req.Env,
 		Command:   req.Command,
@@ -242,7 +329,7 @@ func serveConn(ctx context.Context, conn net.Conn, cfg brokerConfig) {
 		writeExit(fw, 2, err.Error())
 		return
 	}
-	cfg.logger.Info("run", "image", req.Image, "command", req.Command)
+	cfg.logger.Info("run", "image", req.Image, "command", req.Command, "rootfs", rootfs)
 
 	runCtx, cancel := context.WithTimeout(ctx, cfg.timeout)
 	defer cancel()
@@ -288,6 +375,27 @@ func serveConn(ctx context.Context, conn net.Conn, cfg brokerConfig) {
 	default:
 		writeExit(fw, 125, err.Error())
 	}
+}
+
+// allowedRootfs validates a client-requested read-only rootfs mount:
+// the request must be an absolute path that resolves (symlinks
+// included) to the broker's allowed directory or below it.
+func allowedRootfs(requested, allowed string) (string, error) {
+	if allowed == "" {
+		return "", errors.New("broker does not allow rootfs mounts")
+	}
+	if !filepath.IsAbs(requested) {
+		return "", fmt.Errorf("rootfs must be an absolute path: %q", requested)
+	}
+	resolved, err := filepath.EvalSymlinks(requested)
+	if err != nil {
+		return "", fmt.Errorf("rootfs: %w", err)
+	}
+	rel, err := filepath.Rel(allowed, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("rootfs %q is outside %s", requested, allowed)
+	}
+	return resolved, nil
 }
 
 // removeContainer force-removes a named container after a cancelled run:
@@ -411,6 +519,7 @@ func runViaBroker(conn net.Conn, o *RunOptions) int {
 		Command: o.Command,
 		Env:     o.Env,
 		Workdir: o.Workdir,
+		Rootfs:  o.Rootfs,
 	})
 	if err != nil {
 		return fail(err)

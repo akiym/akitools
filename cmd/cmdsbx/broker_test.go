@@ -334,6 +334,93 @@ func TestBuildRunArgsBrokerFields(t *testing.T) {
 	}
 }
 
+func TestBrokerRejectsRootfsWhenNotAllowed(t *testing.T) {
+	var rec callRecorder
+	stubExecCommandContext(t, &rec, "true")
+
+	req := []byte(`{"image":"alpine:3","command":["true"],"rootfs":"/tmp"}`)
+	_, _, exit := serveOneRequest(t, testBrokerConfig, req, nil)
+	if exit.Code != 2 || !strings.Contains(exit.Error, "does not allow rootfs") {
+		t.Errorf("exit = %+v, want code 2 with rootfs rejection", exit)
+	}
+	if len(rec.all()) != 0 {
+		t.Errorf("docker must not run for a rejected request: %q", rec.all())
+	}
+}
+
+func TestBrokerMountsAllowedRootfsReadOnly(t *testing.T) {
+	var rec callRecorder
+	stubExecCommandContext(t, &rec, "true")
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := testBrokerConfig
+	cfg.allowRootfs = dir
+
+	req, err := json.Marshal(brokerRequest{Image: "alpine:3", Command: []string{"true"}, Rootfs: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, exit := serveOneRequest(t, cfg, req, nil)
+	if exit.Code != 0 || exit.Error != "" {
+		t.Fatalf("exit = %+v, want code 0", exit)
+	}
+	calls := rec.all()
+	if len(calls) != 1 {
+		t.Fatalf("docker invocations = %d, want 1", len(calls))
+	}
+	if !containsPair(calls[0], "-v", dir+":"+dir+":ro") {
+		t.Errorf("missing read-only rootfs mount: %q", calls[0])
+	}
+	if !containsPair(calls[0], "-w", dir) {
+		t.Errorf("workdir must default to the rootfs: %q", calls[0])
+	}
+}
+
+func TestAllowedRootfs(t *testing.T) {
+	base := t.TempDir()
+	allowed := filepath.Join(base, "proj")
+	prefix := filepath.Join(base, "projx")
+	outside := filepath.Join(base, "other")
+	for _, d := range []string{filepath.Join(allowed, "sub"), prefix, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	escape := filepath.Join(allowed, "escape")
+	if err := os.Symlink(outside, escape); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(allowed)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []string{allowed, filepath.Join(allowed, "sub")} {
+		if _, err := allowedRootfs(p, resolved); err != nil {
+			t.Errorf("allowedRootfs(%q) = %v, want ok", p, err)
+		}
+	}
+	fails := []struct {
+		name      string
+		requested string
+		allowed   string
+	}{
+		{"notAllowed", allowed, ""},
+		{"relative", "proj", resolved},
+		{"outside", outside, resolved},
+		{"siblingPrefix", prefix, resolved},
+		{"symlinkEscape", escape, resolved},
+		{"missing", filepath.Join(allowed, "nope"), resolved},
+	}
+	for _, tt := range fails {
+		if _, err := allowedRootfs(tt.requested, tt.allowed); err == nil {
+			t.Errorf("%s: allowedRootfs(%q, %q) should fail", tt.name, tt.requested, tt.allowed)
+		}
+	}
+}
+
 func TestValidateImage(t *testing.T) {
 	for _, image := range []string{"x", "ubuntu:24.04", "python:3.12-slim", "ghcr.io/foo/bar@sha256:abc", "registry:5000/a/b:tag"} {
 		if err := validateImage(image); err != nil {

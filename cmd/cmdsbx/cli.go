@@ -227,23 +227,43 @@ func parseEphemeral(fs *flag.FlagSet, args []string, o *RunOptions) (exit int, o
 // cmdDo is the safe ephemeral runner: no mounts, no network, no
 // passthrough. It must stay safe to allow unconditionally in agent
 // permission settings; isolation-weakening flags belong to cmdUnsafe.
+// The only host exposure it can request is --mount-cwd-ro, which never
+// runs docker directly: the mount happens only when a broker validates
+// the directory against its own allow-list.
 func cmdDo(args []string) int {
 	var o RunOptions
+	var mountCwd bool
 	fs := newFlagSet("cmdsbx do")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: cmdsbx do [options] -- <command...>\n\nRuns the command with no mounts and no network. Host files and\nnetwork access require 'cmdsbx unsafe'. When a broker daemon\n(cmdsbx broker) is reachable, the run is delegated to it.\n\nOptions:\n")
+		fmt.Fprint(os.Stderr, "Usage: cmdsbx do [options] -- <command...>\n\nRuns the command with no mounts and no network. --mount-cwd-ro exposes\nthe current directory read-only at the same path, but only through a\nbroker that allows it. Anything more requires 'cmdsbx unsafe'. When a\nbroker daemon (cmdsbx broker) is reachable, the run is delegated to it.\n\nOptions:\n")
 		fs.PrintDefaults()
 	}
 	addSafeFlags(fs, &o)
 	fs.BoolVar(&o.Interactive, "i", false, "stream stdin into the sandbox (pipes, heredocs, -i -- bash)")
+	fs.BoolVar(&mountCwd, "mount-cwd-ro", false, "mount the current directory read-only at the same path (requires a broker that allows it)")
 	if exit, ok := parseEphemeral(fs, args, &o); !ok {
 		return exit
 	}
-	o.NoPull = true
-	if conn := dialBroker(); conn != nil {
-		return runViaBroker(conn, &o)
+	if mountCwd {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fail(err)
+		}
+		resolved, err := filepath.EvalSymlinks(cwd)
+		if err != nil {
+			return fail(err)
+		}
+		o.Rootfs = resolved
 	}
-	return buildAndRun(&o, o.Interactive)
+	o.NoPull = true
+	conn := dialBroker()
+	if conn == nil {
+		if mountCwd {
+			return fail(errors.New("--mount-cwd-ro requires a running broker (ccwrap or cmdsbx broker -allow-rootfs)"))
+		}
+		return buildAndRun(&o, o.Interactive)
+	}
+	return runViaBroker(conn, &o)
 }
 
 func cmdUnsafe(args []string) int {

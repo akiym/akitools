@@ -20,7 +20,7 @@ type approval struct {
 	Files      map[string]string `json:"files"`
 }
 
-func stateDir() (string, error) {
+func xdgStateBase() (string, error) {
 	dir := os.Getenv("XDG_STATE_HOME")
 	if dir == "" {
 		home, err := os.UserHomeDir()
@@ -29,7 +29,15 @@ func stateDir() (string, error) {
 		}
 		dir = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(dir, "akitools", "ccwrap"), nil
+	return dir, nil
+}
+
+func stateDir() (string, error) {
+	base, err := xdgStateBase()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "akitools", "ccwrap"), nil
 }
 
 func approvalPath(cwd string) (string, error) {
