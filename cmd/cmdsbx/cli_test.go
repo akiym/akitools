@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -160,6 +161,77 @@ func TestMainUnsafeRootfsMounts(t *testing.T) {
 	}
 	if !containsPair(got, "-w", dir) {
 		t.Errorf("workdir should default to rootfs: %q", got)
+	}
+}
+
+func TestMainUnsafeWriteRemountsClaudeReadOnly(t *testing.T) {
+	var calls [][]string
+	stubExecCommand(t, &calls)
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code := Main([]string{"unsafe", "--rootfs", dir, "--write", "--", "true"})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	got := calls[0]
+	if !containsPair(got, "-v", dir+":"+dir+":rw") {
+		t.Errorf("missing read-write rootfs mount: %q", got)
+	}
+	claude := filepath.Join(dir, ".claude")
+	if !containsPair(got, "-v", claude+":"+claude+":ro") {
+		t.Errorf(".claude must be re-mounted read-only: %q", got)
+	}
+}
+
+func TestMainUnsafeWriteWithoutClaudeDir(t *testing.T) {
+	var calls [][]string
+	stubExecCommand(t, &calls)
+	dir := t.TempDir()
+	code := Main([]string{"unsafe", "--rootfs", dir, "--write", "--", "true"})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	for _, a := range calls[0] {
+		if strings.Contains(a, ".claude") {
+			t.Errorf("no .claude mount expected: %q", calls[0])
+		}
+	}
+}
+
+func TestMainUnsafeMountRwRemountsClaudeReadOnly(t *testing.T) {
+	var calls [][]string
+	stubExecCommand(t, &calls)
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code := Main([]string{"unsafe", "--mount", dir + ":/proj:rw", "--", "true"})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	got := calls[0]
+	if !containsPair(got, "-v", filepath.Join(dir, ".claude")+":/proj/.claude:ro") {
+		t.Errorf(".claude under a rw mount must be re-mounted read-only: %q", got)
+	}
+}
+
+func TestMainUnsafeReadOnlyRootfsKeepsClaudeUnmounted(t *testing.T) {
+	var calls [][]string
+	stubExecCommand(t, &calls)
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code := Main([]string{"unsafe", "--rootfs", dir, "--", "true"})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	for _, a := range calls[0] {
+		if strings.Contains(a, ".claude") {
+			t.Errorf("read-only rootfs needs no .claude mount: %q", calls[0])
+		}
 	}
 }
 

@@ -124,7 +124,39 @@ func finalizeRunOptions(o *RunOptions, mounts stringList) error {
 	if err := ensureDir("--persist-dir", &o.PersistDir); err != nil {
 		return err
 	}
-	return ensureDir("--overlay-dir", &o.OverlayDir)
+	if err := ensureDir("--overlay-dir", &o.OverlayDir); err != nil {
+		return err
+	}
+	protectClaudeDirs(o)
+	return nil
+}
+
+// protectClaudeDirs re-mounts any .claude directory under a read-write
+// mount as read-only, so sandboxed commands cannot rewrite agent
+// configuration (settings, hooks, skills). The nested bind also makes
+// the directory itself a mount point, so it cannot be renamed or
+// removed from the parent mount.
+func protectClaudeDirs(o *RunOptions) {
+	var rw []Mount
+	if o.Write && o.Rootfs != "" {
+		rw = append(rw, Mount{Source: o.Rootfs, Target: o.Rootfs})
+	}
+	for _, m := range o.Mounts {
+		if m.Mode == "rw" || (m.Mode == "" && o.Write) {
+			rw = append(rw, m)
+		}
+	}
+	for _, m := range rw {
+		src := filepath.Join(m.Source, ".claude")
+		if fi, err := os.Stat(src); err != nil || !fi.IsDir() {
+			continue
+		}
+		target := filepath.Join(m.Target, ".claude")
+		if slices.ContainsFunc(o.Mounts, func(x Mount) bool { return x.Target == target }) {
+			continue
+		}
+		o.Mounts = append(o.Mounts, Mount{Source: src, Target: target, Mode: "ro"})
+	}
 }
 
 // ensureDir absolutizes and creates a host directory named by an
