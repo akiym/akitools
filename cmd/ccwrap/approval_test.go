@@ -177,12 +177,3 @@ func TestConfirmationTargetsMissingSettings(t *testing.T) {
 		t.Errorf("targets = %v", got)
 	}
 }
-
-func TestContainsSettingsFile(t *testing.T) {
-	if !containsSettingsFile([]string{"CLAUDE.md"}, []string{".claude/settings.json"}) {
-		t.Error("expected true when settings.json is present")
-	}
-	if containsSettingsFile([]string{"CLAUDE.md"}, []string{".claude/skills/x/SKILL.md"}) {
-		t.Error("expected false without settings files")
-	}
-}

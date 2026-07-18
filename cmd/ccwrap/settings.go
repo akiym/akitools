@@ -339,19 +339,6 @@ func confirmationTargets(cwd string, autoLoaded []string, hasSettingsFindings bo
 	return current, nil
 }
 
-func containsSettingsFile(paths ...[]string) bool {
-	for _, list := range paths {
-		for _, f := range list {
-			for _, s := range projectSettingsFiles {
-				if f == s {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
 func confirmSettings() (bool, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -400,7 +387,6 @@ func confirmSettings() (bool, error) {
 		return true, nil
 	}
 
-	showSettingsFindings := true
 	if saved == nil {
 		if len(autoLoaded) > 0 {
 			fmt.Fprintln(os.Stderr, "ccwrap: project contains files Claude Code loads automatically:")
@@ -419,10 +405,10 @@ func confirmSettings() (bool, error) {
 		for _, f := range removed {
 			fmt.Fprintf(os.Stderr, "  removed: %s\n", f)
 		}
-		// settingsが承認済みのまま変わっていなければ詳細の再表示は省く
-		showSettingsFindings = containsSettingsFile(added, changed)
 	}
-	if showSettingsFindings {
+	// 未承認のときのみsandbox関連の詳細を出す。承認済みなら
+	// 差分ファイル名の提示だけに留め、ユーザが必要なら該当ファイルを見に行く
+	if saved == nil {
 		if len(overrides) > 0 {
 			fmt.Fprintln(os.Stderr, "ccwrap: .claude/settings.json overrides ~/.claude/settings.json:")
 			for _, o := range overrides {
