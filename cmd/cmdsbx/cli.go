@@ -1,15 +1,20 @@
 package cmdsbx
 
 import (
+	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"text/tabwriter"
 )
+
+//go:embed SKILL.md
+var skillMarkdown string
 
 const usageText = `Usage: cmdsbx <command> [options]
 
@@ -23,6 +28,7 @@ Commands:
   exec    Run a command in an existing sandbox session
   delete  Delete sandbox sessions
   list    List sandbox sessions
+  skill   Print the SKILL.md for Claude Code (redirect into your skills dir)
 
 Run 'cmdsbx <command> -h' for command-specific options.
 `
@@ -48,6 +54,8 @@ func Main(args []string) int {
 		return cmdDelete(args[1:])
 	case "list", "ls":
 		return cmdList(args[1:])
+	case "skill":
+		return cmdSkill(args[1:])
 	case "help", "-h", "--help":
 		fmt.Print(usageText)
 		return 0
@@ -376,6 +384,17 @@ func cmdDelete(args []string) int {
 		}
 	}
 	return rc
+}
+
+func cmdSkill(args []string) int {
+	if len(args) > 0 {
+		fmt.Fprintln(os.Stderr, "Usage: cmdsbx skill")
+		return 2
+	}
+	if _, err := io.WriteString(os.Stdout, skillMarkdown); err != nil {
+		return fail(err)
+	}
+	return 0
 }
 
 func cmdList(args []string) int {

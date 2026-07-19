@@ -2,13 +2,18 @@ package docidx
 
 import (
 	"database/sql"
+	_ "embed"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
+
+//go:embed SKILL.md
+var skillMarkdown string
 
 var (
 	flagDB       string
@@ -151,11 +156,21 @@ func catPage(db *sql.DB, path string) error {
 	return nil
 }
 
+var skillCmd = &cobra.Command{
+	Use:   "skill",
+	Short: "Print the SKILL.md for Claude Code (redirect into your skills dir)",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, err := io.WriteString(cmd.OutOrStdout(), skillMarkdown)
+		return err
+	},
+}
+
 func init() {
 	Cmd.PersistentFlags().StringVar(&flagDB, "db", "index.db", "path to the index database")
 	buildCmd.Flags().StringArrayVar(&flagExcludes, "exclude", nil, "gitignore syntax pattern to skip (repeatable)")
 	searchCmd.Flags().IntVar(&flagLimit, "limit", 30, "maximum number of results")
 	searchCmd.Flags().StringVar(&flagAliases, "aliases", "", "path to aliases.json (default: next to --db)")
 	catCmd.Flags().BoolVar(&flagByPath, "path", false, "treat arguments as document paths and print all chunks of each page in order")
-	Cmd.AddCommand(buildCmd, searchCmd, catCmd)
+	Cmd.AddCommand(buildCmd, searchCmd, catCmd, skillCmd)
 }
