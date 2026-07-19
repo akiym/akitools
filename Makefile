@@ -1,6 +1,5 @@
 CURRENT_REVISION = $(shell git rev-parse --short HEAD)
 BUILD_LDFLAGS = "-s -w -X main.revision=$(CURRENT_REVISION)"
-GOBIN ?= $(shell go env GOPATH)/bin
 
 COMMANDS = \
 	binary2png \
@@ -28,9 +27,18 @@ COMMANDS = \
 .PHONY: build
 build: bin $(COMMANDS)
 
+.PHONY: build-all
+build-all: bin-darwin bin-linux $(COMMANDS)
+
 .PHONY: bin
-bin:
+bin: bin-darwin
+
+.PHONY: bin-darwin
+bin-darwin:
 	GOOS=darwin GOARCH=arm64 go build -ldflags=$(BUILD_LDFLAGS) -o bin/darwin-arm64/akitools
+
+.PHONY: bin-linux
+bin-linux:
 	GOOS=linux GOARCH=amd64 go build -ldflags=$(BUILD_LDFLAGS) -o bin/linux-amd64/akitools
 
 .PHONY: $(COMMANDS)
@@ -42,18 +50,14 @@ $(COMMANDS):
 clean:
 	rm -rf bin/*
 
-.PHONY: install
-install:
-	go install -ldflags=$(BUILD_LDFLAGS)
-
 .PHONY: test
 test:
 	go test -v -race ./...
 
-.PHONY: fmt
-fmt:
-	golangci-lint fmt
-
 .PHONY: lint
 lint:
 	golangci-lint run
+
+.PHONY: fmt
+fmt:
+	golangci-lint fmt
