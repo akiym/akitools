@@ -16,7 +16,6 @@ export GOPATH := "/tmp/claude-501/gopath"
 export GOCACHE := "/tmp/claude-501/gocache"
 export GOMODCACHE := "/tmp/claude-501/gomod"
 export GOTELEMETRY := "off"
-export GOFLAGS := "-modcacherw"
 export GOLANGCI_LINT_CACHE := "/tmp/claude-501/golangci-lint"
 
 default:
@@ -28,8 +27,14 @@ test *args='./...':
 build *args='./...':
     go build "$@"
 
+run *args:
+    go run "$@"
+
 lint *args='':
     golangci-lint run "$@"
 
 fmt:
     golangci-lint fmt
+
+clean:
+    go clean -modcache -cache
