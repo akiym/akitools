@@ -1,0 +1,35 @@
+# Managed task runner for akitools.
+#
+# Lives under .claude/skills/ so the Claude Code sandbox write-denylist
+# protects it from silent edits. Invoke from the repo root as:
+#
+#   just --justfile .claude/skills/just/justfile <recipe> [args...]
+#
+# `set working-directory` re-anchors recipes back to the repo root, and
+# the `export`s below pre-seed the cache paths the sandbox permits so
+# plain `go` / `golangci-lint` invocations succeed without a prefix.
+
+set working-directory := "../../.."
+set positional-arguments
+
+export GOPATH := "/tmp/claude-501/gopath"
+export GOCACHE := "/tmp/claude-501/gocache"
+export GOMODCACHE := "/tmp/claude-501/gomod"
+export GOTELEMETRY := "off"
+export GOFLAGS := "-modcacherw"
+export GOLANGCI_LINT_CACHE := "/tmp/claude-501/golangci-lint"
+
+default:
+    @just --justfile {{justfile()}} --list
+
+test *args='./...':
+    go test -race "$@"
+
+build *args='./...':
+    go build "$@"
+
+lint *args='':
+    golangci-lint run "$@"
+
+fmt:
+    golangci-lint fmt
