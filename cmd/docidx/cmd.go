@@ -3,8 +3,10 @@ package docidx
 import (
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,11 +18,16 @@ import (
 var skillMarkdown string
 
 var (
-	flagDB       string
-	flagLimit    int
-	flagAliases  string
-	flagExcludes []string
-	flagByPath   bool
+	flagDB          string
+	flagLimit       int
+	flagAliases     string
+	flagExcludes    []string
+	flagByPath      bool
+	flagZealOut     string
+	flagZealRefresh bool
+	flagZealList    bool
+	flagZealNoIndex bool
+	flagZealKeep    bool
 )
 
 var Cmd = &cobra.Command{
@@ -156,6 +163,75 @@ func catPage(db *sql.DB, path string) error {
 	return nil
 }
 
+var downloadZealCmd = &cobra.Command{
+	Use:   "download-zeal [query]",
+	Short: "Interactively pick a Dash/Zeal user-contributed docset and download it",
+	Long: `Fetch the docset list from zealusercontributions.vercel.app, let you
+pick one (fzf if available, otherwise a numbered menu), then download and
+extract the .tgz into --out.
+
+The extracted directory has the shape <Name>.docset/Contents/Resources/Documents/,
+and that dir is fed to the same indexer as "docidx build" to produce
+<Name>.db next to the .docset (skip with --no-index; override the path with --db).
+
+By default the .docset is deleted after a successful index build since docidx
+serves cat/search entirely from the db; pass --keep to retain it (useful if you
+want to rebuild with different flags or browse the HTML directly).`,
+	Args: cobra.ArbitraryArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		query := strings.Join(args, " ")
+		docsets, err := loadZealDocsets(flagZealRefresh)
+		if err != nil {
+			return err
+		}
+		if flagZealList {
+			for _, d := range filterZealDocsets(docsets, query) {
+				fmt.Printf("%s\tv%s\n", d.Name, d.Version)
+			}
+			return nil
+		}
+		picked, err := pickZealDocset(docsets, query)
+		if err != nil {
+			return err
+		}
+		if picked == nil {
+			return errors.New("no docset selected")
+		}
+		target, err := downloadAndExtractZeal(cmd.Context(), *picked, flagZealOut)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("extracted: %s\n", target)
+		docsDir := filepath.Join(target, "Contents", "Resources", "Documents")
+		fi, err := os.Stat(docsDir)
+		if err != nil || !fi.IsDir() {
+			fmt.Fprintf(os.Stderr, "note: %s missing; skipping index build\n", docsDir)
+			return nil
+		}
+		if flagZealNoIndex {
+			dbName := strings.TrimSuffix(filepath.Base(target), ".docset") + ".db"
+			fmt.Printf("next: docidx build %s --db %s\n", docsDir, dbName)
+			return nil
+		}
+		dbPath := flagDB
+		if !cmd.Flags().Changed("db") {
+			dbPath = filepath.Join(filepath.Dir(target), strings.TrimSuffix(filepath.Base(target), ".docset")+".db")
+		}
+		files, chunks, err := buildIndex(dbPath, docsDir, nil)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("indexed %d files (%d chunks) into %s\n", files, chunks, dbPath)
+		if !flagZealKeep {
+			if err := os.RemoveAll(target); err != nil {
+				return fmt.Errorf("remove %s: %w", target, err)
+			}
+			fmt.Printf("removed: %s (pass --keep to retain)\n", target)
+		}
+		return nil
+	},
+}
+
 var skillCmd = &cobra.Command{
 	Use:   "skill",
 	Short: "Print the SKILL.md for Claude Code (redirect into your skills dir)",
@@ -172,5 +248,10 @@ func init() {
 	searchCmd.Flags().IntVar(&flagLimit, "limit", 30, "maximum number of results")
 	searchCmd.Flags().StringVar(&flagAliases, "aliases", "", "path to aliases.json (default: next to --db)")
 	catCmd.Flags().BoolVar(&flagByPath, "path", false, "treat arguments as document paths and print all chunks of each page in order")
-	Cmd.AddCommand(buildCmd, searchCmd, catCmd, skillCmd)
+	downloadZealCmd.Flags().StringVar(&flagZealOut, "out", ".", "output directory for the extracted .docset")
+	downloadZealCmd.Flags().BoolVar(&flagZealRefresh, "refresh", false, "refresh the cached docset list before searching")
+	downloadZealCmd.Flags().BoolVar(&flagZealList, "list", false, "print matching docsets (name<TAB>version) and exit")
+	downloadZealCmd.Flags().BoolVar(&flagZealNoIndex, "no-index", false, "download only; skip building the docidx index.db")
+	downloadZealCmd.Flags().BoolVar(&flagZealKeep, "keep", false, "keep the extracted .docset after a successful index build (default: delete)")
+	Cmd.AddCommand(buildCmd, searchCmd, catCmd, downloadZealCmd, skillCmd)
 }
