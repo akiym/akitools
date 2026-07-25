@@ -18,6 +18,7 @@ COMMANDS = \
 	o \
 	random_string \
 	rotn \
+	sbx-backup \
 	shellcode \
 	tobin \
 	tohex \

@@ -2,6 +2,8 @@ package sbxbackup
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,34 +15,39 @@ import (
 	"path/filepath"
 	"strings"
 
+	diskfs "github.com/diskfs/go-diskfs"
+	"github.com/diskfs/go-diskfs/disk"
+	"github.com/diskfs/go-diskfs/filesystem"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
 // Requirements:
-// - sbx (Docker Sandboxes CLI)
+// - sbx (Docker Sandboxes CLI) — used only to list and remove sandboxes.
+//   Logs are extracted by reading the containerd ext4 images directly, so
+//   sandboxes are never started (or otherwise touched) during backup.
 
-var agentPaths = map[string][]string{
-	"claude": {".claude/projects"},
-	"codex":  {".codex/sessions"},
-	"opencode": {
-		".local/share/opencode/opencode.db",
-		".local/share/opencode/opencode.db-wal",
-		".local/share/opencode/opencode.db-shm",
-	},
-}
+// Layout under the Docker Sandboxes containerd root:
+//
+//	com.docker.volume.driver.v1.block/images/sandbox-plugin-<name>-claude-<hash>.img
+//	    per-sandbox Claude Code block volumes (ext4, written live). Only the
+//	    projects volume has '-<encoded-cwd>' dirs at its root; the sibling
+//	    sessions/todos/statsig/shell-snapshots volumes stay empty there.
+//	io.containerd.snapshotter.v1.erofs/snapshots/<N>/rwlayer.img
+//	    per-container writable overlay layer (ext4) holding Codex sessions and
+//	    the opencode db under /upper/home/agent/..., flushed on stop/destroy.
+//	    Snapshot numbers cannot be attributed to a sandbox without parsing
+//	    containerd's bolt metadata, so every snapshot is scanned instead.
+const (
+	volumeImagesRel = "com.docker.volume.driver.v1.block/images"
+	snapshotsRel    = "io.containerd.snapshotter.v1.erofs/snapshots"
 
-var logPaths = []struct {
-	src string
-	dst string
-}{
-	{".claude/projects", "claude/projects"},
-	{".codex/sessions", "codex/sessions"},
-}
+	codexSessionsInner = "upper/home/agent/.codex/sessions"
+	opencodeDBInner    = "upper/home/agent/.local/share/opencode/opencode.db"
+)
 
 var (
 	flagKeep bool
-	flagYes  bool
 	flagAll  bool
 )
 
@@ -54,8 +61,7 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().BoolVar(&flagKeep, "keep", false, "backup only; do not remove sandboxes")
-	Cmd.Flags().BoolVarP(&flagYes, "yes", "y", false, "remove sandboxes without confirmation")
-	Cmd.Flags().BoolVarP(&flagAll, "all", "a", false, "include running sandboxes")
+	Cmd.Flags().BoolVarP(&flagAll, "all", "a", false, "include running sandboxes in backup (only stopped ones are removed)")
 }
 
 type sandbox struct {
@@ -99,13 +105,64 @@ func run(args []string) error {
 		}
 	}
 
+	croot, err := containerdRoot()
+	if err != nil {
+		return err
+	}
 	root := filepath.Join(xdgDataHome(), "akitools", "sbx-backup")
+
 	for _, s := range targets {
-		if err := backupOne(s, root); err != nil {
+		if isRunning(s.Status) {
+			fmt.Printf("note: %s is running; codex/opencode logs may be stale\n", s.Name)
+		}
+	}
+
+	// Codex/opencode logs live in anonymous snapshots, so they are always
+	// backed up for every sandbox at once, regardless of the targets.
+	total, err := backupSnapshots(croot, root)
+	if err != nil {
+		return err
+	}
+
+	for _, s := range targets {
+		n, err := backupClaude(s, croot, root)
+		total += n
+		if err != nil {
 			return fmt.Errorf("%s: %w", s.Name, err)
 		}
 	}
-	return nil
+	fmt.Printf("saved %d files to %s\n", total, displayPath(root))
+
+	if flagKeep {
+		return nil
+	}
+	// Running sandboxes are only ever backed up (--all), never removed.
+	var stopped []string
+	for _, s := range targets {
+		if !isRunning(s.Status) {
+			stopped = append(stopped, s.Name)
+		}
+	}
+	return removeSandboxes(stopped)
+}
+
+// printFiles lists freshly copied files relative to the backup root.
+func printFiles(root string, files []string) {
+	for _, f := range files {
+		rel, err := filepath.Rel(root, f)
+		if err != nil {
+			rel = f
+		}
+		fmt.Printf("  %s\n", rel)
+	}
+}
+
+func displayPath(p string) string {
+	home, err := os.UserHomeDir()
+	if err == nil && strings.HasPrefix(p, home+string(filepath.Separator)) {
+		return "~" + p[len(home):]
+	}
+	return p
 }
 
 func listSandboxes() ([]sandbox, error) {
@@ -180,175 +237,300 @@ func xdgDataHome() string {
 	return filepath.Join(home, ".local", "share")
 }
 
-func backupPaths(agent string) []string {
-	if paths, ok := agentPaths[agent]; ok {
-		return paths
+func containerdRoot() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
 	}
-	var all []string
-	for _, a := range []string{"claude", "codex", "opencode"} {
-		all = append(all, agentPaths[a]...)
+	root := filepath.Join(home, "Library", "Application Support",
+		"com.docker.sandboxes", "sandboxes", "sandboxd", "containerd", "root")
+	if _, err := os.Stat(root); err != nil {
+		return "", fmt.Errorf("containerd root not found: %w", err)
 	}
-	return all
+	return root, nil
 }
 
-func backupOne(s sandbox, root string) error {
-	fmt.Printf("backing up %s\n", s.Name)
+type ext4Image struct {
+	disk *disk.Disk
+	fsys filesystem.FileSystem
+}
 
-	home, err := sandboxHome(s.Name)
+func openExt4(imgPath string) (*ext4Image, error) {
+	d, err := diskfs.Open(imgPath, diskfs.WithOpenMode(diskfs.ReadOnly))
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	staging, err := os.MkdirTemp("", "sbx-backup-")
+	fsys, err := d.GetFilesystem(0)
 	if err != nil {
-		return err
+		d.Close()
+		return nil, err
 	}
-	defer os.RemoveAll(staging)
+	return &ext4Image{disk: d, fsys: fsys}, nil
+}
 
-	copied := 0
-	for _, rel := range backupPaths(s.Agent) {
-		src := s.Name + ":" + path.Join(home, rel)
-		dst := filepath.Join(staging, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return err
+func (i *ext4Image) Close() error {
+	return i.disk.Close()
+}
+
+// readFile reads a whole file out of fsys in a single Read call.
+//
+// go-diskfs's ext4 File.Read panics ("makeslice: len out of range") when a
+// read starts exactly at an extent boundary, which fs.ReadFile triggers on
+// any multi-extent file via io.ReadAll's repeated small reads. A single
+// full-size Read never re-enters at a nonzero offset, avoiding the bug.
+func readFile(fsys fs.FS, p string) ([]byte, error) {
+	f, err := fsys.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	buf := make([]byte, info.Size())
+	if _, err := io.ReadFull(f, buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+// backupSnapshots extracts Codex sessions and opencode databases from every
+// snapshot's rwlayer.img into the backup root, returning the number of files
+// saved.
+func backupSnapshots(croot, root string) (int, error) {
+	entries, err := os.ReadDir(filepath.Join(croot, snapshotsRel))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, nil
 		}
-		out, err := exec.Command("sbx", "cp", src, dst).CombinedOutput()
+		return 0, err
+	}
+	total := 0
+	var failed []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		img := filepath.Join(croot, snapshotsRel, e.Name(), "rwlayer.img")
+		if _, err := os.Stat(img); err != nil {
+			continue
+		}
+		n, err := backupSnapshot(img, root)
+		total += n
 		if err != nil {
-			if !isOptionalPath(rel) {
-				fmt.Printf("  skip %s: %s\n", rel, firstLine(out))
+			fmt.Printf("warning: snapshot %s: %s\n", e.Name(), err)
+			failed = append(failed, e.Name())
+		}
+	}
+	if len(failed) > 0 {
+		return total, fmt.Errorf("failed to backup snapshots: %s", strings.Join(failed, ", "))
+	}
+	return total, nil
+}
+
+func backupSnapshot(img, root string) (n int, err error) {
+	// go-diskfs panics on some ext4 layouts; contain it to this snapshot.
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+
+	ext4, err := openExt4(img)
+	if err != nil {
+		return 0, err
+	}
+	defer ext4.Close()
+	files, err := copyTree(ext4.fsys, codexSessionsInner, filepath.Join(root, "codex", "sessions"))
+	printFiles(root, files)
+	n = len(files)
+	if err != nil {
+		return n, err
+	}
+	saved, err := backupOpencodeDB(ext4.fsys, root)
+	printFiles(root, saved)
+	n += len(saved)
+	return n, err
+}
+
+// backupOpencodeDB copies opencode.db (+ WAL/SHM sidecars) out of a rwlayer
+// filesystem. Snapshots cannot be attributed to a sandbox, so the file is
+// named by the hash of the main db, which also makes re-runs idempotent.
+func backupOpencodeDB(fsys fs.FS, root string) ([]string, error) {
+	db, err := readFile(fsys, opencodeDBInner)
+	if err != nil {
+		return nil, nil
+	}
+	sum := sha256.Sum256(db)
+	dst := filepath.Join(root, "opencode", hex.EncodeToString(sum[:6])+".opencode.db")
+	if err := writeFile(dst, db); err != nil {
+		return nil, err
+	}
+	saved := []string{dst}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		data, err := readFile(fsys, opencodeDBInner+suffix)
+		if err != nil {
+			continue
+		}
+		if err := writeFile(dst+suffix, data); err != nil {
+			return saved, err
+		}
+		saved = append(saved, dst+suffix)
+	}
+	return saved, nil
+}
+
+// backupClaude copies the sandbox's Claude Code project volumes, returning
+// the number of files saved.
+func backupClaude(s sandbox, croot, root string) (int, error) {
+	total := 0
+	for _, img := range claudeVolumeImages(croot, s.Name) {
+		files, err := backupVolume(img, filepath.Join(root, "claude", "projects"))
+		printFiles(root, files)
+		total += len(files)
+		if err != nil {
+			return total, fmt.Errorf("%s: %w", filepath.Base(img), err)
+		}
+	}
+	return total, nil
+}
+
+func backupVolume(img, dstRoot string) (files []string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+
+	ext4, err := openExt4(img)
+	if err != nil {
+		fmt.Printf("skip %s: %s\n", filepath.Base(img), err)
+		return nil, nil
+	}
+	defer ext4.Close()
+	return backupClaudeVolume(ext4.fsys, dstRoot)
+}
+
+// claudeVolumeImages lists the block volume images belonging to the named
+// sandbox. The sandbox name may contain '-', so match on the full prefix.
+func claudeVolumeImages(croot, name string) []string {
+	dir := filepath.Join(croot, volumeImagesRel)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	prefix := "sandbox-plugin-" + name + "-claude-"
+	var out []string
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			continue
+		}
+		if strings.HasPrefix(e.Name(), prefix) && strings.HasSuffix(e.Name(), ".img") {
+			out = append(out, filepath.Join(dir, e.Name()))
+		}
+	}
+	return out
+}
+
+// backupClaudeVolume copies every '-<encoded-cwd>' project dir found at the
+// volume root. Non-projects volumes (sessions/todos/...) have none and
+// contribute nothing.
+func backupClaudeVolume(fsys fs.FS, dstRoot string) ([]string, error) {
+	entries, err := fs.ReadDir(fsys, ".")
+	if err != nil {
+		return nil, err
+	}
+	var copied []string
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), "-") {
+			continue
+		}
+		files, err := copyTree(fsys, e.Name(), filepath.Join(dstRoot, e.Name()))
+		copied = append(copied, files...)
+		if err != nil {
+			return copied, err
+		}
+	}
+	return copied, nil
+}
+
+// copyTree merge-copies all regular files under src (a directory inside fsys)
+// into dstRoot, preserving mtimes, and returns the destination paths. A
+// missing src is not an error.
+func copyTree(fsys fs.FS, src, dstRoot string) ([]string, error) {
+	var copied []string
+	err := fs.WalkDir(fsys, src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if p == src {
+				return fs.SkipAll
 			}
-			continue
-		}
-		fmt.Printf("  copied %s\n", rel)
-		copied++
-	}
-
-	if copied == 0 {
-		fmt.Printf("  nothing to backup\n")
-	} else {
-		if err := extractLogs(staging, root, s); err != nil {
 			return err
 		}
-	}
-
-	wasRunning := isRunning(s.Status)
-	if flagKeep {
-		if !wasRunning {
-			stopSandbox(s.Name)
-		}
-		return nil
-	}
-	if !flagYes && !confirmRemoval(s.Name) {
-		fmt.Printf("  kept %s\n", s.Name)
-		if !wasRunning {
-			stopSandbox(s.Name)
-		}
-		return nil
-	}
-	return removeSandbox(s.Name)
-}
-
-func isOptionalPath(rel string) bool {
-	return strings.HasSuffix(rel, "-wal") || strings.HasSuffix(rel, "-shm")
-}
-
-func extractLogs(staging, root string, s sandbox) error {
-	for _, p := range logPaths {
-		src := filepath.Join(staging, filepath.FromSlash(p.src))
-		if _, err := os.Stat(src); err != nil {
-			continue
-		}
-		dst := filepath.Join(root, filepath.FromSlash(p.dst))
-		if err := mergeCopy(src, dst); err != nil {
-			return err
-		}
-		fmt.Printf("  logs: %s\n", dst)
-	}
-
-	matches, err := filepath.Glob(filepath.Join(staging, ".local", "share", "opencode", "opencode.db*"))
-	if err != nil {
-		return err
-	}
-	for _, m := range matches {
-		suffix := strings.TrimPrefix(filepath.Base(m), "opencode.db")
-		dst := filepath.Join(root, "opencode", fmt.Sprintf("%s-%s.opencode.db%s", s.Name, shortID(s.ID), suffix))
-		if err := copyFile(m, dst); err != nil {
-			return err
-		}
-		fmt.Printf("  logs: %s\n", dst)
-	}
-	return nil
-}
-
-func shortID(id string) string {
-	if i := strings.IndexByte(id, '-'); i > 0 {
-		return id[:i]
-	}
-	return id
-}
-
-func mergeCopy(src, dst string) error {
-	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, p)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, rel)
 		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
+			if d.Name() == "lost+found" {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		if !d.Type().IsRegular() {
 			return nil
 		}
-		return copyFile(p, target)
+		rel := strings.TrimPrefix(p, src)
+		rel = strings.TrimPrefix(rel, "/")
+		if rel == "" {
+			rel = path.Base(p)
+		}
+		data, err := readFile(fsys, p)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", p, err)
+		}
+		dst := filepath.Join(dstRoot, filepath.FromSlash(rel))
+		if err := writeFile(dst, data); err != nil {
+			return err
+		}
+		if info, err := d.Info(); err == nil {
+			_ = os.Chtimes(dst, info.ModTime(), info.ModTime())
+		}
+		copied = append(copied, dst)
+		return nil
 	})
+	return copied, err
 }
 
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	info, err := in.Stat()
-	if err != nil {
-		return err
-	}
+func writeFile(dst string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	return out.Close()
+	return os.WriteFile(dst, data, 0o644)
 }
 
-func sandboxHome(name string) (string, error) {
-	out, err := exec.Command("sbx", "exec", name, "sh", "-c", "echo $HOME").Output()
-	if err != nil {
-		return "", fmt.Errorf("detect home directory: %w", err)
+// removeSandboxes confirms and removes the named sandboxes in one batch.
+func removeSandboxes(names []string) error {
+	if len(names) == 0 {
+		return nil
 	}
-	home := strings.TrimSpace(string(out))
-	if home == "" {
-		return "", errors.New("detect home directory: empty $HOME")
+	if !confirmRemoval(names) {
+		fmt.Printf("kept %s\n", strings.Join(names, ", "))
+		return nil
 	}
-	return home, nil
+	for _, name := range names {
+		if err := removeSandbox(name); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	return nil
 }
 
-func confirmRemoval(name string) bool {
+func confirmRemoval(names []string) bool {
 	if !isatty.IsTerminal(os.Stdin.Fd()) {
-		fmt.Printf("  stdin is not a terminal; use --yes to remove %s\n", name)
+		fmt.Println("stdin is not a terminal; skipping removal")
 		return false
 	}
-	fmt.Printf("remove sandbox %s? [y/N]: ", name)
+	fmt.Println("remove stopped sandboxes? [y/N]:")
+	for _, name := range names {
+		fmt.Printf("- %s\n", name)
+	}
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
 		return false
@@ -362,21 +544,4 @@ func removeSandbox(name string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
-}
-
-func stopSandbox(name string) {
-	if out, err := exec.Command("sbx", "stop", name).CombinedOutput(); err != nil {
-		fmt.Printf("  warning: failed to stop %s: %s\n", name, firstLine(out))
-	}
-}
-
-func firstLine(out []byte) string {
-	s := strings.TrimSpace(string(out))
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	if s == "" {
-		return "unknown error"
-	}
-	return s
 }
