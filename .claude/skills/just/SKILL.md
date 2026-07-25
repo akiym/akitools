@@ -4,6 +4,16 @@ description: Task runner for this repo's Go workflow. Use whenever you need to r
 allowed-tools: Bash(just --justfile .claude/skills/just/justfile test:*), Bash(just --justfile .claude/skills/just/justfile build:*), Bash(just --justfile .claude/skills/just/justfile lint:*), Bash(just --justfile .claude/skills/just/justfile fmt:*), Bash(just --justfile .claude/skills/just/justfile clean)
 ---
 
+Allowed tools:
+
+```
+just --justfile .claude/skills/just/justfile test:*
+just --justfile .claude/skills/just/justfile build:*
+just --justfile .claude/skills/just/justfile lint:*
+just --justfile .claude/skills/just/justfile fmt:*
+just --justfile .claude/skills/just/justfile clean
+```
+
 | recipe | command                       | default args |
 |--------|-------------------------------|--------------|
 | test   | `go test -race "$@"`          | `./...`      |
