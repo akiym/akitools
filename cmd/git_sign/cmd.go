@@ -11,7 +11,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var headOnly bool
+var (
+	headOnly  bool
+	doPush    bool
+	forcePush bool
+)
 
 var Cmd = &cobra.Command{
 	Use:   "git-sign",
@@ -20,13 +24,33 @@ var Cmd = &cobra.Command{
 		if headOnly {
 			return runHead()
 		}
-		return run()
+		if err := run(); err != nil {
+			return err
+		}
+		if doPush || forcePush {
+			return push(forcePush)
+		}
+		return nil
 	},
 }
 
 func init() {
 	Cmd.Flags().BoolVar(&headOnly, "head-only", false, "sign HEAD only if it is unsigned and authored by you (used internally by rebase --exec)")
 	_ = Cmd.Flags().MarkHidden("head-only")
+	Cmd.Flags().BoolVar(&doPush, "push", false, "push after signing succeeds")
+	Cmd.Flags().BoolVar(&forcePush, "force-push", false, "push with --force after signing succeeds")
+}
+
+func push(force bool) error {
+	args := []string{"push"}
+	if force {
+		args = append(args, "--force")
+	}
+	pushCmd := exec.Command("git", args...)
+	pushCmd.Stdin = os.Stdin
+	pushCmd.Stdout = os.Stdout
+	pushCmd.Stderr = os.Stderr
+	return pushCmd.Run()
 }
 
 func indent(s, prefix string) string {
