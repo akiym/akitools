@@ -12,9 +12,8 @@ import (
 )
 
 var (
-	headOnly  bool
-	doPush    bool
-	forcePush bool
+	headOnly bool
+	doPush   bool
 )
 
 var Cmd = &cobra.Command{
@@ -27,8 +26,8 @@ var Cmd = &cobra.Command{
 		if err := run(); err != nil {
 			return err
 		}
-		if doPush || forcePush {
-			return push(forcePush)
+		if doPush {
+			return push()
 		}
 		return nil
 	},
@@ -38,15 +37,10 @@ func init() {
 	Cmd.Flags().BoolVar(&headOnly, "head-only", false, "sign HEAD only if it is unsigned and authored by you (used internally by rebase --exec)")
 	_ = Cmd.Flags().MarkHidden("head-only")
 	Cmd.Flags().BoolVar(&doPush, "push", false, "push after signing succeeds")
-	Cmd.Flags().BoolVar(&forcePush, "force-push", false, "push with --force after signing succeeds")
 }
 
-func push(force bool) error {
-	args := []string{"push"}
-	if force {
-		args = append(args, "--force")
-	}
-	pushCmd := exec.Command("git", args...)
+func push() error {
+	pushCmd := exec.Command("git", "push")
 	pushCmd.Stdin = os.Stdin
 	pushCmd.Stdout = os.Stdout
 	pushCmd.Stderr = os.Stderr

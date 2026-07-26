@@ -273,27 +273,8 @@ func TestRunThenPushUpdatesRemote(t *testing.T) {
 	if err := run(); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if err := push(false); err != nil {
+	if err := push(); err != nil {
 		t.Fatalf("push: %v", err)
-	}
-
-	if local, remote := revParse(t, repo, "HEAD"), revParse(t, origin, "main"); local != remote {
-		t.Errorf("remote main = %s, want %s", remote, local)
-	}
-}
-
-func TestForcePushOverwritesDivergedRemote(t *testing.T) {
-	repo := setupRepo(t)
-	origin := filepath.Join(filepath.Dir(repo), "origin.git")
-	commit(t, repo, "pushed commit")
-	git(t, repo, "push")
-	git(t, repo, "commit", "--amend", "-m", "rewritten commit")
-
-	if err := push(false); err == nil {
-		t.Fatal("non-force push succeeded despite diverged remote")
-	}
-	if err := push(true); err != nil {
-		t.Fatalf("force push: %v", err)
 	}
 
 	if local, remote := revParse(t, repo, "HEAD"), revParse(t, origin, "main"); local != remote {
