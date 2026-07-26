@@ -3,6 +3,7 @@ package sbxbackup
 import (
 	"archive/tar"
 	"compress/gzip"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -87,7 +88,7 @@ func extractFixtures(t *testing.T) (projectsVolume, rwlayer string) {
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

@@ -284,7 +284,7 @@ func run() error {
 		abort := exec.Command("git", "rebase", "--abort")
 		abort.Stderr = os.Stderr
 		if abortErr := abort.Run(); abortErr != nil {
-			return fmt.Errorf("rebase failed (%w) and `git rebase --abort` also failed: %v; resolve the rebase manually", err, abortErr)
+			return fmt.Errorf("rebase failed (%w) and `git rebase --abort` also failed: %w; resolve the rebase manually", err, abortErr)
 		}
 		return fmt.Errorf("signing during rebase failed (%w); rebase aborted, repository restored to its original state", err)
 	}

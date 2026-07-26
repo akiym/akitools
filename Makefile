@@ -12,6 +12,7 @@ COMMANDS = \
 	gistwrapper \
 	git-branch-recent \
 	git-sign \
+	htmlmd \
 	jwt \
 	libc-offsets \
 	noln \
