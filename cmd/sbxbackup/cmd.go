@@ -527,10 +527,11 @@ func confirmRemoval(names []string) bool {
 		fmt.Println("stdin is not a terminal; skipping removal")
 		return false
 	}
-	fmt.Println("remove stopped sandboxes? [y/N]:")
+	fmt.Println("The following stopped sandboxes will be removed:")
 	for _, name := range names {
-		fmt.Printf("- %s\n", name)
+		fmt.Printf("  %s\n", name)
 	}
+	fmt.Print("Do you want to continue? [y/N]: ")
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
 		return false
