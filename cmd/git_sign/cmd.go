@@ -259,5 +259,29 @@ func run() error {
 	rebaseCmd.Stdin = os.Stdin
 	rebaseCmd.Stdout = os.Stdout
 	rebaseCmd.Stderr = os.Stderr
-	return rebaseCmd.Run()
+	if err := rebaseCmd.Run(); err != nil {
+		if !rebaseInProgress() {
+			return err
+		}
+		abort := exec.Command("git", "rebase", "--abort")
+		abort.Stderr = os.Stderr
+		if abortErr := abort.Run(); abortErr != nil {
+			return fmt.Errorf("rebase failed (%w) and `git rebase --abort` also failed: %v; resolve the rebase manually", err, abortErr)
+		}
+		return fmt.Errorf("signing during rebase failed (%w); rebase aborted, repository restored to its original state", err)
+	}
+	return nil
+}
+
+func rebaseInProgress() bool {
+	for _, name := range []string{"rebase-merge", "rebase-apply"} {
+		out, err := exec.Command("git", "rev-parse", "--git-path", name).Output()
+		if err != nil {
+			continue
+		}
+		if _, err := os.Stat(strings.TrimSpace(string(out))); err == nil {
+			return true
+		}
+	}
+	return false
 }
