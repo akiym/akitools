@@ -99,6 +99,36 @@ func filterEnv(env []string, key string) []string {
 	return filtered
 }
 
+// needsHerdrAgentHint はHERDR_AGENTヒントを立てる必要があるかを返す。
+// herdrのpane内(HERDR_PANE_IDが継承されている)でだけ意味があり、
+// 呼び出し側が明示的にHERDR_AGENTを指定していればそちらを尊重する
+func needsHerdrAgentHint() bool {
+	return os.Getenv("HERDR_PANE_ID") != "" && os.Getenv("HERDR_AGENT") == ""
+}
+
+// applyHerdrAgentHint はherdrに「このpaneのagentはclaudeだ」と伝える。
+// ccwrapはosc8wrap(内部でptyを張る)越しにclaudeを起動するため、
+// host側のherdrから見えるpaneのforeground processはccwrapとosc8wrapだけで、
+// claude本体は内側のptyに隠れて検出できない。
+//
+// HERDR_AGENTはプロセスの環境ブロックから読まれるが、これはexec時点で固定され
+// os.Setenvでは書き換えられない(Linuxの/proc/<pid>/environもmacOSの
+// KERN_PROCARGS2も反映しない)。そのため自プロセスをexecし直して環境ごと
+// 差し替える。execした環境はosc8wrapとclaudeにもそのまま継承される。
+//
+// 成功時はプロセスイメージが置き換わるので戻らない。
+func applyHerdrAgentHint() error {
+	if !needsHerdrAgentHint() {
+		return nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	env := append(filterEnv(os.Environ(), "HERDR_AGENT"), "HERDR_AGENT=claude")
+	return syscall.Exec(exe, os.Args, env)
+}
+
 func compressFile(file string) error {
 	zstd := exec.Command("zstd", "--rm", "-f", "-q", file)
 	zstd.Stderr = os.Stderr
@@ -171,6 +201,10 @@ func runCompress() error {
 }
 
 func run(args []string) (int, error) {
+	if err := applyHerdrAgentHint(); err != nil {
+		fmt.Fprintf(os.Stderr, "ccwrap: herdr agent hint disabled: %v\n", err)
+	}
+
 	// 先にsettings.local.jsonを最新のcwdに揃えてから検査する
 	if err := ensureLocalSandboxSettings(); err != nil {
 		return 1, fmt.Errorf("setup sandbox settings: %w", err)
