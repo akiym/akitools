@@ -307,14 +307,18 @@ func autoLoadedPath(rel string) bool {
 	return false
 }
 
-var projectSettingsFiles = []string{
-	filepath.Join(".claude", "settings.json"),
-	filepath.Join(".claude", "settings.local.json"),
-}
+var (
+	projectSettingsFile      = filepath.Join(".claude", "settings.json")
+	projectLocalSettingsFile = filepath.Join(".claude", "settings.local.json")
+)
 
 // confirmationTargets は確認対象ファイルの相対パスと内容ハッシュを集める。
-// 自動読み込みファイルすべてに加え、overrides/concernsがある場合は
-// その元になるプロジェクト側settingsも対象にする
+// 自動読み込みファイルに加え、リポジトリに同梱されうる
+// .claude/settings.json は常に対象にする: findOverrides は global 側に無い
+// キーを報告しないため、project 側だけに現れる hooks や permissions.allow は
+// overrides にも concerns にもならず、ハッシュ対象から外すと無警告で通る。
+// settings.local.json はローカル専用でccwrap自身もClaude Codeも書き換える
+// ため、findings があるときだけ対象にする
 func confirmationTargets(cwd string, autoLoaded []string, hasSettingsFindings bool) (map[string]string, error) {
 	current := make(map[string]string, len(autoLoaded))
 	for _, f := range autoLoaded {
@@ -324,17 +328,19 @@ func confirmationTargets(cwd string, autoLoaded []string, hasSettingsFindings bo
 		}
 		current[f] = h
 	}
+	settingsFiles := []string{projectSettingsFile}
 	if hasSettingsFindings {
-		for _, f := range projectSettingsFiles {
-			h, err := hashFile(filepath.Join(cwd, f))
-			if err != nil {
-				if os.IsNotExist(err) {
-					continue
-				}
-				return nil, fmt.Errorf("hash %s: %w", f, err)
+		settingsFiles = append(settingsFiles, projectLocalSettingsFile)
+	}
+	for _, f := range settingsFiles {
+		h, err := hashFile(filepath.Join(cwd, f))
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
 			}
-			current[f] = h
+			return nil, fmt.Errorf("hash %s: %w", f, err)
 		}
+		current[f] = h
 	}
 	return current, nil
 }
@@ -370,14 +376,14 @@ func confirmSettings() (bool, error) {
 	concerns := findSandboxConcerns(".claude/settings.json", project, cwd, home)
 	concerns = append(concerns, findSandboxConcerns(".claude/settings.local.json", local, cwd, home)...)
 
-	if len(overrides) == 0 && len(concerns) == 0 && len(autoLoaded) == 0 {
-		return true, nil
-	}
-
 	current, err := confirmationTargets(cwd, autoLoaded, len(overrides) > 0 || len(concerns) > 0)
 	if err != nil {
 		return false, err
 	}
+	if len(overrides) == 0 && len(concerns) == 0 && len(current) == 0 {
+		return true, nil
+	}
+
 	saved, err := loadApproval(cwd)
 	if err != nil {
 		return false, err
@@ -388,9 +394,9 @@ func confirmSettings() (bool, error) {
 	}
 
 	if saved == nil {
-		if len(autoLoaded) > 0 {
-			fmt.Fprintln(os.Stderr, "ccwrap: project contains files Claude Code loads automatically:")
-			for _, f := range autoLoaded {
+		if len(current) > 0 {
+			fmt.Fprintln(os.Stderr, "ccwrap: project contains files Claude Code reads at startup:")
+			for _, f := range sortedKeys(current) {
 				fmt.Fprintf(os.Stderr, "  %s\n", f)
 			}
 		}

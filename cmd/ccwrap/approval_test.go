@@ -138,11 +138,13 @@ func TestConfirmationTargets(t *testing.T) {
 		".claude/skills/deploy/run.sh",
 	}
 
+	// settings.json は findings の有無によらず常に対象になる
 	current, err := confirmationTargets(dir, autoLoaded, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := sortedKeys(current); !reflect.DeepEqual(got, []string{
+		".claude/settings.json",
 		".claude/skills/deploy/SKILL.md",
 		".claude/skills/deploy/run.sh",
 		"CLAUDE.md",
@@ -150,6 +152,7 @@ func TestConfirmationTargets(t *testing.T) {
 		t.Errorf("targets = %v", got)
 	}
 
+	// findings があるときは settings.local.json も加わる
 	current, err = confirmationTargets(dir, autoLoaded, true)
 	if err != nil {
 		t.Fatal(err)
