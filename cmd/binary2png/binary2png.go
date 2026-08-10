@@ -1,58 +1,61 @@
 package binary2png
 
 import (
-	"flag"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"io"
-	"log"
 	"os"
 
 	"github.com/spf13/cobra"
 )
 
+var (
+	outfile string
+	width   int
+	bcolor  bool
+)
+
 var Cmd = &cobra.Command{
-	Use:   "binary2png",
+	Use:   "binary2png <filename>",
 	Short: "Convert binary to png",
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return run(args)
 	},
 }
 
-func run(args []string) error {
-	var (
-		outfile = flag.String("outfile", "out.png", "")
-		width   = flag.Int("width", 128, "")
-		bcolor  = flag.Bool("color", false, "")
-	)
-	err := flag.CommandLine.Parse(args)
-	if err != nil {
-		return err
-	}
+func init() {
+	Cmd.Flags().StringVar(&outfile, "outfile", "out.png", "output png path")
+	Cmd.Flags().IntVar(&width, "width", 128, "image width in pixels")
+	Cmd.Flags().BoolVar(&bcolor, "color", false, "use the extended color palette")
+}
 
-	if flag.NArg() != 1 {
-		_, _ = fmt.Fprintf(os.Stderr,
-			"Usage: %s [--width=%%d] [--outfile=%%s] filename\n", os.Args[0])
-		os.Exit(1)
+func run(args []string) error {
+	if width < 1 {
+		return errors.New("--width must be greater than 0")
 	}
-	filename := flag.Args()[0]
+	filename := args[0]
 
 	file, err := os.Open(filename)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer file.Close()
 	buf, err := io.ReadAll(file)
 	if err != nil {
-		log.Fatal(err)
+		return err
+	}
+	if len(buf) == 0 {
+		return fmt.Errorf("%s is empty", filename)
 	}
 
-	m := image.NewRGBA(image.Rect(0, 0, *width, (len(buf)-1) / *width + 1))
+	m := image.NewRGBA(image.Rect(0, 0, width, (len(buf)-1)/width+1))
 	for i, c := range buf {
 		var bitColor color.RGBA
-		if *bcolor {
+		if bcolor {
 			if c == 0x00 {
 				bitColor = color.RGBA{R: 255, G: 255, B: 255, A: 255}
 			} else if 0x01 <= c && c <= 0x1f {
@@ -77,15 +80,16 @@ func run(args []string) error {
 				bitColor = color.RGBA{A: 255}
 			}
 		}
-		m.Set(i%*width, i / *width, bitColor)
+		m.Set(i%width, i/width, bitColor)
 	}
 
-	img, err := os.Create(*outfile)
+	img, err := os.Create(outfile)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer img.Close()
-	_ = png.Encode(img, m)
-
-	return nil
+	if err := png.Encode(img, m); err != nil {
+		return err
+	}
+	return img.Close()
 }
