@@ -57,7 +57,11 @@ func wrapEach(cmd string, args []string, lineMax int, handler func(line *string)
 	}
 
 	scanner := bufio.NewScanner(stdout)
+	// grep hits can exceed bufio.Scanner's 64KB default, which would
+	// otherwise truncate the output silently.
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
+	killed := false
 	lineCount := 0
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -66,10 +70,19 @@ func wrapEach(cmd string, args []string, lineMax int, handler func(line *string)
 
 		if lineMax > 0 && lineCount >= lineMax {
 			_ = proc.Process.Kill()
+			killed = true
 			handler(nil)
 			break
 		}
 	}
+	if err := scanner.Err(); err != nil && !killed {
+		return err
+	}
 
-	return proc.Wait()
+	// Reaping a process we killed on purpose always reports a signal; that
+	// is the documented lineMax behaviour, not a failure.
+	if err := proc.Wait(); err != nil && !killed {
+		return err
+	}
+	return nil
 }
