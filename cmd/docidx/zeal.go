@@ -309,7 +309,10 @@ func extractTarGz(r io.Reader, absDest string) (string, error) {
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return "", err
 			}
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode.Perm()|0o200)
+			// Archive permission bits are honored only for the owner: a
+			// docset must not be able to hand other users write access.
+			perm := (mode.Perm() | 0o200) &^ 0o022
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
 			if err != nil {
 				return "", err
 			}
@@ -321,6 +324,12 @@ func extractTarGz(r io.Reader, absDest string) (string, error) {
 				return "", err
 			}
 		case mode&os.ModeSymlink != 0:
+			// A symlink pointing outside the destination would let a later
+			// archive entry be written through it, escaping absDest even
+			// though every entry name itself passes the check above.
+			if err := checkSymlinkTarget(target, hdr.Linkname, absDest, sep); err != nil {
+				return "", err
+			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return "", err
 			}
@@ -334,4 +343,22 @@ func extractTarGz(r io.Reader, absDest string) (string, error) {
 		return "", errors.New("empty archive")
 	}
 	return root, nil
+}
+
+// checkSymlinkTarget rejects a symlink whose target resolves outside the
+// extraction root. Because every link in the tree is validated the same way,
+// a chain of links cannot reach outside either.
+func checkSymlinkTarget(linkPath, linkname, absDest, sep string) error {
+	if linkname == "" {
+		return fmt.Errorf("empty symlink target in archive: %s", linkPath)
+	}
+	resolved := linkname
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(filepath.Dir(linkPath), resolved)
+	}
+	resolved = filepath.Clean(resolved)
+	if resolved != absDest && !strings.HasPrefix(resolved, absDest+sep) {
+		return fmt.Errorf("illegal symlink in archive: %s -> %s", linkPath, linkname)
+	}
+	return nil
 }
