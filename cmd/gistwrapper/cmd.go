@@ -78,7 +78,9 @@ func createGist(env []string, filenames []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return gh(env, nil, append([]string{"gist", "create", "-d", filepath.Base(cwd)}, filenames...)...)
+	// "--" keeps a filename that starts with '-' from being parsed as a gh
+	// flag; "--public" would otherwise turn the secret gist public.
+	return gh(env, nil, append([]string{"gist", "create", "-d", filepath.Base(cwd), "--"}, filenames...)...)
 }
 
 func updateGist(env []string, digest string, filenames []string) error {
