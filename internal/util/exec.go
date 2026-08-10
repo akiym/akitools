@@ -6,13 +6,18 @@ import (
 )
 
 func ExecEmbeddedScript(command, embeddedScript string, args []string) error {
-	tmpfile, err := os.CreateTemp("", "")
+	tmpfile, err := os.CreateTemp("", "akitools-*")
 	if err != nil {
 		return err
 	}
 	defer tmpfile.Close()
+	// 消さないと呼び出しのたびにスクリプトが $TMPDIR に溜まり続ける
+	defer os.Remove(tmpfile.Name())
 
-	if err := os.WriteFile(tmpfile.Name(), []byte(embeddedScript), 0); err != nil {
+	if _, err := tmpfile.WriteString(embeddedScript); err != nil {
+		return err
+	}
+	if err := tmpfile.Close(); err != nil {
 		return err
 	}
 	cmd := exec.Command(
