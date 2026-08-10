@@ -10,6 +10,7 @@ import (
 var Cmd = &cobra.Command{
 	Use:   "command-wrapper <command>",
 	Short: "",
+	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return run(args)
 	},
