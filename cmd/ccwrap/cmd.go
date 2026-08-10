@@ -183,11 +183,8 @@ func runCompress() error {
 					continue
 				}
 				zstFile := file + ".zst"
-				if _, err := os.Stat(zstFile); err == nil {
-					zstInfo, err := os.Stat(zstFile)
-					if err == nil && info.ModTime().Before(zstInfo.ModTime()) {
-						continue
-					}
+				if zstInfo, err := os.Stat(zstFile); err == nil && info.ModTime().Before(zstInfo.ModTime()) {
+					continue
 				}
 				fmt.Fprintf(os.Stderr, "compressing %s\n", file)
 				if err := compressFile(file); err != nil {
