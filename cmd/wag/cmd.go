@@ -43,7 +43,7 @@ func run(args []string) error {
 
 		if strings.Contains(line, ":") {
 			parts := strings.SplitN(line, ":", 3)
-			if len(parts) >= 2 {
+			if len(parts) == 3 {
 				return fmt.Sprintf(
 					`<a href="%s">%s</a>:%s`,
 					parts[0]+"#"+parts[1],
