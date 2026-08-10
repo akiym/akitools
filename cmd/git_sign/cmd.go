@@ -149,6 +149,22 @@ func shouldSign(c commitInfo, userName, userEmail string) (bool, string) {
 	return true, ""
 }
 
+// hasStagedChanges reports whether the index differs from HEAD. `git commit
+// --amend` would silently fold those changes into the commit being signed, so
+// signing must refuse to start until the index is clean.
+func hasStagedChanges() (bool, error) {
+	cmd := exec.Command("git", "diff", "--cached", "--quiet")
+	err := cmd.Run()
+	if err == nil {
+		return false, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return true, nil
+	}
+	return false, fmt.Errorf("failed to inspect the index: %w", err)
+}
+
 func amendSign() error {
 	amend := exec.Command("git", "commit", "--amend", "--no-edit", "-S")
 	amend.Env = append(os.Environ(), "HUSKY=0")
@@ -205,6 +221,14 @@ func resolvedExecutable() (string, error) {
 }
 
 func run() error {
+	staged, err := hasStagedChanges()
+	if err != nil {
+		return err
+	}
+	if staged {
+		return errors.New("the index has staged changes; commit or stash them before signing")
+	}
+
 	userName, err := gitConfig("user.name")
 	if err != nil {
 		return err
