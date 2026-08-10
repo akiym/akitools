@@ -237,8 +237,13 @@ func run(args []string) (int, error) {
 	}
 
 	logDir := filepath.Join(base, workspace)
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
+	// mitm/harダンプにはAnthropicの認証ヘッダと会話全文が入るので、
+	// 他ユーザーから読めない権限で作る(brokerログと同じ扱い)
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		return 1, fmt.Errorf("create log dir: %w", err)
+	}
+	if err := os.Chmod(logDir, 0o700); err != nil {
+		return 1, fmt.Errorf("tighten log dir: %w", err)
 	}
 
 	port, err := findFreePort()
@@ -250,7 +255,15 @@ func run(args []string) (int, error) {
 	harFile := filepath.Join(logDir, timestamp+".har")
 	lockFile := filepath.Join(logDir, timestamp+".lock")
 
-	if err := os.WriteFile(lockFile, nil, 0o644); err != nil {
+	// mitmdumpは自身のumaskでダンプを作るため、先に0600で作っておく。
+	// 後続のO_TRUNC書き込みはmodeを変えないので権限は維持される
+	if f, err := os.OpenFile(mitmFile, os.O_CREATE|os.O_WRONLY, 0o600); err != nil {
+		return 1, fmt.Errorf("create mitm file: %w", err)
+	} else {
+		f.Close()
+	}
+
+	if err := os.WriteFile(lockFile, nil, 0o600); err != nil {
 		return 1, fmt.Errorf("create lock file: %w", err)
 	}
 	defer os.Remove(lockFile)
@@ -326,6 +339,10 @@ func run(args []string) (int, error) {
 		conv.Stderr = os.Stderr
 		if err := conv.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "ccwrap: failed to convert to HAR: %v\n", err)
+		}
+		// harもmitmと同じく認証ヘッダを含むので、mitmdumpのumask任せにしない
+		if err := os.Chmod(harFile, 0o600); err != nil && !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "ccwrap: failed to tighten HAR permissions: %v\n", err)
 		}
 	}
 
