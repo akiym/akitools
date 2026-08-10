@@ -42,6 +42,21 @@ type zealDocset struct {
 	Author  zealAuthor `json:"author"`
 }
 
+// http.DefaultClient has no timeout at all, so a stalled mirror would hang
+// the command forever. The metadata fetch is small enough to bound
+// end-to-end; a docset download can legitimately run for minutes, so only
+// its time-to-first-byte is bounded.
+var (
+	zealAPIClient      = &http.Client{Timeout: 30 * time.Second}
+	zealDownloadClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			TLSHandshakeTimeout:   30 * time.Second,
+			ResponseHeaderTimeout: 60 * time.Second,
+		},
+	}
+)
+
 func zealCachePath() (string, error) {
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
@@ -84,7 +99,7 @@ func fetchZealDocsets(cachePath string) ([]zealDocset, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := zealAPIClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +275,7 @@ func downloadOneZeal(ctx context.Context, url, absOut string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := zealDownloadClient.Do(req)
 	if err != nil {
 		return "", err
 	}
