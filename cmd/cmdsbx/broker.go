@@ -277,10 +277,19 @@ func serveListener(ctx context.Context, ln net.Listener, cfg brokerConfig) {
 			time.Sleep(time.Second)
 			continue
 		}
+		// The slot is taken before the connection is handed to a goroutine:
+		// acquiring it inside would let a client open unbounded connections,
+		// each pinning a goroutine and an fd with no read deadline (that is
+		// only armed in serveConn) until a slot frees up.
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			conn.Close()
+			return
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{}
 			defer func() { <-sem }()
 			serveConn(ctx, conn, cfg)
 		}()
