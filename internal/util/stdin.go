@@ -19,10 +19,13 @@ func StdinOrClipboard() (r *os.File, err error) {
 			return nil, err
 		}
 
-		if _, err := w.Write(output); err != nil {
-			return nil, err
-		}
-		_ = w.Close()
+		// A clipboard larger than the pipe buffer (64KB on Linux, less on
+		// macOS) would block forever here: nothing reads the other end
+		// until the caller hands it to a child process.
+		go func() {
+			defer w.Close()
+			_, _ = w.Write(output)
+		}()
 
 		return r, nil
 	} else {
