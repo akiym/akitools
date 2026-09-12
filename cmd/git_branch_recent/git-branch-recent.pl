@@ -38,10 +38,15 @@ for my $line (split /\n/, $lines) {
         Time::Piece->strptime($date, '%a %b %d %H:%M:%S %Y %z')->epoch
     )->strftime('[%Y-%m-%d %H:%M]');
     my $author_aligned = sprintf '%-16s', $author;
-    $branch =~ s!^refs/(heads|remotes|tags)/?!!;
+    # refs/notes/... のように何も剥がせない ref もあるので、$1 を直接
+    # 読むと前の行のマッチが残る
+    my $kind = '';
+    if ($branch =~ s!^refs/(heads|remotes|tags)/?!!) {
+        $kind = $1;
+    }
     next if any { $_ eq $branch } @merged_branches;
-    my $is_remote = ($1 eq 'remotes');
-    my $is_tag = ($1 eq 'tags');
+    my $is_remote = ($kind eq 'remotes');
+    my $is_tag = ($kind eq 'tags');
 
     next if $is_remote && (grep { $_ eq $branch } map { "origin/$_" } @skip_remote_branch);
 
