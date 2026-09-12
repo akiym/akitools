@@ -332,6 +332,13 @@ func run(args []string) (int, error) {
 	cleanupMitmdump()
 
 	if fi, err := os.Stat(mitmFile); err == nil && fi.Size() > 0 {
+		// harもmitmと同じく認証ヘッダを含む。変換が終わってからchmodすると
+		// 書き出している間ずっと他ユーザーから読めるので、先に0600で作る
+		if f, err := os.OpenFile(harFile, os.O_CREATE|os.O_WRONLY, 0o600); err != nil {
+			fmt.Fprintf(os.Stderr, "ccwrap: failed to create HAR file: %v\n", err)
+		} else {
+			f.Close()
+		}
 		conv := exec.Command("mitmdump",
 			"-nr", mitmFile,
 			"--set", "hardump="+harFile,
@@ -340,7 +347,6 @@ func run(args []string) (int, error) {
 		if err := conv.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "ccwrap: failed to convert to HAR: %v\n", err)
 		}
-		// harもmitmと同じく認証ヘッダを含むので、mitmdumpのumask任せにしない
 		if err := os.Chmod(harFile, 0o600); err != nil && !os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "ccwrap: failed to tighten HAR permissions: %v\n", err)
 		}
