@@ -292,6 +292,15 @@ func extractTarGz(r io.Reader, absDest string) (string, error) {
 		return "", err
 	}
 	defer gz.Close()
+	// Containment is checked against the symlink-resolved destination
+	// because os.OpenFile and os.Symlink follow the links the archive
+	// itself planted: a purely lexical check on the entry name is not
+	// enough, since a link to "." makes the next link's ".." climb one
+	// level higher than its name suggests.
+	realDest, err := filepath.EvalSymlinks(absDest)
+	if err != nil {
+		return "", err
+	}
 	tr := tar.NewReader(gz)
 	root := ""
 	sep := string(filepath.Separator)
@@ -307,23 +316,37 @@ func extractTarGz(r io.Reader, absDest string) (string, error) {
 		if name == "." || name == ".." || strings.HasPrefix(name, ".."+sep) {
 			continue
 		}
-		target := filepath.Join(absDest, name)
-		if target != absDest && !strings.HasPrefix(target, absDest+sep) {
-			return "", fmt.Errorf("illegal path in archive: %s", hdr.Name)
-		}
 		if first := strings.SplitN(name, sep, 2)[0]; root == "" && first != "" {
 			root = first
 		}
+		parent, err := entryParent(filepath.Join(realDest, name), realDest, sep)
+		if err != nil {
+			return "", err
+		}
+		target := filepath.Join(parent, filepath.Base(name))
 		mode := hdr.FileInfo().Mode()
 		switch {
 		case mode.IsDir():
 			if err := os.MkdirAll(target, 0o755); err != nil {
 				return "", err
 			}
-		case mode.IsRegular():
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		// A hard link carries no body, so it must not fall through to the
+		// regular-file case: tar.FileInfo reports it as regular and the
+		// entry would silently become an empty file.
+		case hdr.Typeflag == tar.TypeLink:
+			src := resolveExisting(filepath.Join(realDest, filepath.Clean(hdr.Linkname)))
+			if !within(src, realDest, sep) {
+				return "", fmt.Errorf("illegal hard link in archive: %s -> %s", hdr.Name, hdr.Linkname)
+			}
+			_ = os.Remove(target)
+			if err := os.Link(src, target); err != nil {
 				return "", err
 			}
+		case mode.IsRegular():
+			// Replace rather than truncate in place, so an entry never
+			// writes through a symlink an earlier entry left behind and
+			// re-extraction cannot inherit looser permissions.
+			_ = os.Remove(target)
 			// Archive permission bits are honored only for the owner: a
 			// docset must not be able to hand other users write access.
 			perm := (mode.Perm() | 0o200) &^ 0o022
@@ -342,10 +365,7 @@ func extractTarGz(r io.Reader, absDest string) (string, error) {
 			// A symlink pointing outside the destination would let a later
 			// archive entry be written through it, escaping absDest even
 			// though every entry name itself passes the check above.
-			if err := checkSymlinkTarget(target, hdr.Linkname, absDest, sep); err != nil {
-				return "", err
-			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := checkSymlinkTarget(target, hdr.Linkname, parent, realDest, sep); err != nil {
 				return "", err
 			}
 			_ = os.Remove(target)
@@ -360,19 +380,57 @@ func extractTarGz(r io.Reader, absDest string) (string, error) {
 	return root, nil
 }
 
+func within(path, root, sep string) bool {
+	return path == root || strings.HasPrefix(path, root+sep)
+}
+
+// entryParent returns the directory that will hold an entry, with every
+// symlink on the way resolved, and creates it. Resolving before creating
+// matters: os.MkdirAll would happily build a path through a link that
+// leaves the extraction root.
+func entryParent(target, realDest, sep string) (string, error) {
+	dir := resolveExisting(filepath.Dir(target))
+	if !within(dir, realDest, sep) {
+		return "", fmt.Errorf("illegal path in archive: %s", target)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// resolveExisting resolves the symlinks in the deepest part of p that
+// exists and re-appends the rest, so a path that is not there yet can
+// still be checked. The trailing part cannot hide a symlink: it does not
+// exist.
+func resolveExisting(p string) string {
+	rest := ""
+	for {
+		if resolved, err := filepath.EvalSymlinks(p); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return filepath.Join(p, rest)
+		}
+		rest = filepath.Join(filepath.Base(p), rest)
+		p = parent
+	}
+}
+
 // checkSymlinkTarget rejects a symlink whose target resolves outside the
-// extraction root. Because every link in the tree is validated the same way,
-// a chain of links cannot reach outside either.
-func checkSymlinkTarget(linkPath, linkname, absDest, sep string) error {
+// extraction root. The target is resolved against the already-resolved
+// parent directory and through the filesystem, so a link that hops through
+// another link cannot climb out.
+func checkSymlinkTarget(linkPath, linkname, parent, realDest, sep string) error {
 	if linkname == "" {
 		return fmt.Errorf("empty symlink target in archive: %s", linkPath)
 	}
 	resolved := linkname
 	if !filepath.IsAbs(resolved) {
-		resolved = filepath.Join(filepath.Dir(linkPath), resolved)
+		resolved = filepath.Join(parent, resolved)
 	}
-	resolved = filepath.Clean(resolved)
-	if resolved != absDest && !strings.HasPrefix(resolved, absDest+sep) {
+	if !within(resolveExisting(resolved), realDest, sep) {
 		return fmt.Errorf("illegal symlink in archive: %s -> %s", linkPath, linkname)
 	}
 	return nil

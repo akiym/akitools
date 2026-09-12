@@ -119,6 +119,50 @@ func TestExtractTarGzRejectsEscapingSymlink(t *testing.T) {
 	}
 }
 
+// Each link below stays inside the destination when its name is read
+// lexically, but following them one after another climbs out of it: the
+// containment check has to resolve the links it already created.
+func TestExtractTarGzRejectsChainedSymlinkEscape(t *testing.T) {
+	outside := t.TempDir()
+	dest := filepath.Join(outside, "out")
+	if err := os.Mkdir(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := makeTarGz(t, []tarEntry{
+		{name: "Go.docset/", typeflag: tar.TypeDir},
+		{name: "Go.docset/a", typeflag: tar.TypeSymlink, linkname: "."},
+		{name: "Go.docset/a/c", typeflag: tar.TypeSymlink, linkname: ".."},
+		{name: "Go.docset/a/c/x", typeflag: tar.TypeSymlink, linkname: ".."},
+		{name: "Go.docset/a/c/x/escaped", typeflag: tar.TypeReg, body: "pwned"},
+	})
+
+	if _, err := extractTarGz(r, dest); err == nil {
+		t.Error("chained symlinks were accepted")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "escaped")); !os.IsNotExist(err) {
+		t.Errorf("entry escaped the destination: %v", err)
+	}
+}
+
+func TestExtractTarGzHardLink(t *testing.T) {
+	dest := t.TempDir()
+	r := makeTarGz(t, []tarEntry{
+		{name: "Go.docset/index.html", typeflag: tar.TypeReg, body: "<h1>hi</h1>"},
+		{name: "Go.docset/dup.html", typeflag: tar.TypeLink, linkname: "Go.docset/index.html"},
+	})
+
+	if _, err := extractTarGz(r, dest); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "Go.docset", "dup.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "<h1>hi</h1>" {
+		t.Errorf("dup.html = %q, want the linked content", data)
+	}
+}
+
 func TestExtractTarGzSkipsEscapingPath(t *testing.T) {
 	outside := t.TempDir()
 	dest := filepath.Join(outside, "out")
