@@ -38,6 +38,11 @@ func w3m(handler func(w io.WriteCloser) error) error {
 		return err
 	}
 	if err := handler(stdin); err != nil {
+		// Returning without reaping leaves w3m behind, still holding the
+		// terminal it was about to draw on.
+		_ = stdin.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
 		return err
 	}
 	return cmd.Wait()
