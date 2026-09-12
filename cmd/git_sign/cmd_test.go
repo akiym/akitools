@@ -282,6 +282,26 @@ func TestRunThenPushUpdatesRemote(t *testing.T) {
 	}
 }
 
+// push must behave like `git push origin HEAD`, so a push.default that makes a
+// bare `git push` refuse to pick a refspec must not affect it.
+func TestPushIgnoresPushDefault(t *testing.T) {
+	repo := setupRepo(t)
+	origin := filepath.Join(filepath.Dir(repo), "origin.git")
+	git(t, repo, "config", "push.default", "nothing")
+	commit(t, repo, "unsigned head")
+
+	if err := run(); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if err := push(); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+
+	if local, remote := revParse(t, repo, "HEAD"), revParse(t, origin, "main"); local != remote {
+		t.Errorf("remote main = %s, want %s", remote, local)
+	}
+}
+
 func TestRunHeadOnlySkipsForeignCommit(t *testing.T) {
 	repo := setupRepo(t)
 	commit(t, repo, "theirs", "user.name=Other", "user.email=other@example.com")

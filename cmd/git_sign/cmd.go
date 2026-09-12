@@ -36,11 +36,14 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.Flags().BoolVar(&headOnly, "head-only", false, "sign HEAD only if it is unsigned and authored by you (used internally by rebase --exec)")
 	_ = Cmd.Flags().MarkHidden("head-only")
-	Cmd.Flags().BoolVar(&doPush, "push", false, "push after signing succeeds")
+	Cmd.Flags().BoolVar(&doPush, "push", false, "run `git push origin HEAD` after signing succeeds")
 }
 
+// push mirrors `git push origin HEAD`: the current branch always goes to the
+// same-named branch on origin, regardless of push.default or where the
+// branch's upstream happens to point.
 func push() error {
-	pushCmd := exec.Command("git", "push")
+	pushCmd := exec.Command("git", "push", "origin", "HEAD")
 	pushCmd.Stdin = os.Stdin
 	pushCmd.Stdout = os.Stdout
 	pushCmd.Stderr = os.Stderr
