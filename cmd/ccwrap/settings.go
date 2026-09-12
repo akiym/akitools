@@ -253,15 +253,22 @@ func readLine(r io.Reader) (string, error) {
 // 列挙する。対象は任意の深さの .claude 配下(skills, agents, commands, rules,
 // CLAUDE.mdなど。サブディレクトリの .claude はdirectory-scoped skillsとして
 // 遅延発見される)、各階層の CLAUDE.md / CLAUDE.local.md、ルートの .mcp.json。
-// ルート直下の settings.json / settings.local.json はconfirmSettingsが中身を
-// 検査するうえ、settings.local.jsonはccwrap自身も書き込むため除外する。
+// ルート直下の settings.json / settings.local.json は confirmationTargets が
+// 常にハッシュ対象に加えるため、ここでは重複を避けて除外する。
 // .claude/.ccwrap はccwrap自身の管理ディレクトリで、並行セッションの
 // socket(hash不能)が置かれるため対象外
 func findAutoLoadedFiles(cwd string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(cwd, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			// 読めないディレクトリが1つあるだけでccwrapが起動しなくなるのは
+			// 割に合わない。同じuidで動くClaude Codeからも読めないので、
+			// 警告だけ出して残りを走査する
+			fmt.Fprintf(os.Stderr, "ccwrap: skipping %s: %v\n", path, err)
+			if d != nil && d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		if d.IsDir() {
 			if d.Name() == ".git" && path != cwd {
@@ -276,9 +283,53 @@ func findAutoLoadedFiles(cwd string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		if autoLoadedPath(rel) {
-			files = append(files, rel)
+		if !autoLoadedPath(rel) {
+			return nil
 		}
+		// WalkDirはsymlinkを辿らないので、`.claude` がディレクトリへの
+		// symlinkだと中身が未検査のまま残る(しかもhashFileがEISDIRで落ちる)
+		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+			linked, err := autoLoadedUnder(path, rel)
+			if err != nil {
+				return err
+			}
+			files = append(files, linked...)
+			return nil
+		}
+		files = append(files, rel)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+// autoLoadedUnder はディレクトリへのsymlinkとして置かれた自動読み込み
+// パスの中身を列挙する。解決済みの実パスを走査するので、その先の
+// symlinkは辿らずループにも陥らない
+func autoLoadedUnder(dir, rel string) ([]string, error) {
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	err = filepath.WalkDir(resolved, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ccwrap: skipping %s: %v\n", path, err)
+			if d != nil && d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		sub, err := filepath.Rel(resolved, path)
+		if err != nil {
+			return err
+		}
+		files = append(files, filepath.Join(rel, sub))
 		return nil
 	})
 	if err != nil {
@@ -314,12 +365,13 @@ var (
 
 // confirmationTargets は確認対象ファイルの相対パスと内容ハッシュを集める。
 // 自動読み込みファイルに加え、リポジトリに同梱されうる
-// .claude/settings.json は常に対象にする: findOverrides は global 側に無い
-// キーを報告しないため、project 側だけに現れる hooks や permissions.allow は
-// overrides にも concerns にもならず、ハッシュ対象から外すと無警告で通る。
-// settings.local.json はローカル専用でccwrap自身もClaude Codeも書き換える
-// ため、findings があるときだけ対象にする
-func confirmationTargets(cwd string, autoLoaded []string, hasSettingsFindings bool) (map[string]string, error) {
+// .claude/settings.json と .claude/settings.local.json は常に対象にする:
+// findOverrides は global 側に無いキーを報告しないため、project 側だけに
+// 現れる hooks や permissions.allow は overrides にも concerns にもならず、
+// ハッシュ対象から外すと無警告で通る。settings.local.json はローカル専用の
+// つもりでもリポジトリに同梱できてしまい、そこに置かれた hooks は起動時に
+// 実行される
+func confirmationTargets(cwd string, autoLoaded []string) (map[string]string, error) {
 	current := make(map[string]string, len(autoLoaded))
 	for _, f := range autoLoaded {
 		h, err := hashFile(filepath.Join(cwd, f))
@@ -328,11 +380,7 @@ func confirmationTargets(cwd string, autoLoaded []string, hasSettingsFindings bo
 		}
 		current[f] = h
 	}
-	settingsFiles := []string{projectSettingsFile}
-	if hasSettingsFindings {
-		settingsFiles = append(settingsFiles, projectLocalSettingsFile)
-	}
-	for _, f := range settingsFiles {
+	for _, f := range []string{projectSettingsFile, projectLocalSettingsFile} {
 		h, err := hashFile(filepath.Join(cwd, f))
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -376,7 +424,7 @@ func confirmSettings() (bool, error) {
 	concerns := findSandboxConcerns(".claude/settings.json", project, cwd, home)
 	concerns = append(concerns, findSandboxConcerns(".claude/settings.local.json", local, cwd, home)...)
 
-	current, err := confirmationTargets(cwd, autoLoaded, len(overrides) > 0 || len(concerns) > 0)
+	current, err := confirmationTargets(cwd, autoLoaded)
 	if err != nil {
 		return false, err
 	}

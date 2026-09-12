@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -521,6 +522,32 @@ func TestFindAutoLoadedFilesEmpty(t *testing.T) {
 	}
 	if files != nil {
 		t.Errorf("expected nil, got %v", files)
+	}
+}
+
+func TestFindAutoLoadedFilesClaudeSymlinkedDir(t *testing.T) {
+	dir := t.TempDir()
+	shared := t.TempDir()
+	writeTestFiles(t, shared, []string{"skills/deploy/SKILL.md", "CLAUDE.md"})
+	if err := os.Symlink(shared, filepath.Join(dir, ".claude")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	files, err := findAutoLoadedFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		filepath.Join(".claude", "CLAUDE.md"),
+		filepath.Join(".claude", "skills", "deploy", "SKILL.md"),
+	}
+	sort.Strings(files)
+	if !reflect.DeepEqual(files, want) {
+		t.Errorf("files = %v, want %v", files, want)
+	}
+	// symlinkの先の中身までハッシュできること(EISDIRで落ちない)
+	if _, err := confirmationTargets(dir, files); err != nil {
+		t.Errorf("confirmationTargets: %v", err)
 	}
 }
 
