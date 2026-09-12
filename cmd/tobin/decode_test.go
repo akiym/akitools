@@ -15,6 +15,9 @@ var decodeEscapeSequenceTests = []struct {
 	{[]byte(`\0\00\0000`), []byte("\x00\x00\x000")},
 	{[]byte(`\xab\xCD\x00\xff`), []byte("\xab\xcd\x00\xff")},
 	{[]byte(`\x0\x00\x000`), []byte("\x00\x00\x000")},
+	// 途中で切れたエスケープは読めた桁だけの値になる
+	{[]byte(`\x4g`), []byte("\x04g")},
+	{[]byte(`\1x`), []byte("\x01x")},
 }
 
 func TestDecodeEscapeSequence(t *testing.T) {

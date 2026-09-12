@@ -47,25 +47,26 @@ func DecodeEscapeSequence(src []byte) ([]byte, error) {
 			case 'x': // \xhh
 				i++
 				var hex uint8
+				// Shift only once a digit is known to be there: shifting
+				// first would scale a short escape ("\x4g") as if the
+				// missing digit had been a 0.
 				for j := 0; j < 2 && i < len(src); j++ {
-					hex *= 16
 					o, ok := hexToUint8(src[i])
 					if !ok {
 						break
 					}
-					hex += o
+					hex = hex*16 + o
 					i++
 				}
 				b.WriteByte(hex)
 			case '0', '1', '2', '3', '4', '5', '6', '7': // \ooo
 				var oct uint8
 				for j := 0; j < 3 && i < len(src); j++ {
-					oct *= 8
 					o, ok := octToUint8(src[i])
 					if !ok {
 						break
 					}
-					oct += o
+					oct = oct*8 + o
 					i++
 				}
 				b.WriteByte(oct)
