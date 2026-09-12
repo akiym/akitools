@@ -149,6 +149,10 @@ func protectClaudeDirs(o *RunOptions) {
 	if o.Write && o.Rootfs != "" {
 		rw = append(rw, Mount{Source: o.Rootfs, Target: o.Rootfs})
 	}
+	// --persist-dir is always mounted read-write, --write or not.
+	if o.PersistDir != "" {
+		rw = append(rw, Mount{Source: o.PersistDir, Target: o.PersistDir})
+	}
 	for _, m := range o.Mounts {
 		if m.Mode == "rw" || (m.Mode == "" && o.Write) {
 			rw = append(rw, m)

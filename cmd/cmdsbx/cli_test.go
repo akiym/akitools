@@ -217,6 +217,24 @@ func TestMainUnsafeMountRwRemountsClaudeReadOnly(t *testing.T) {
 	}
 }
 
+func TestMainUnsafePersistDirRemountsClaudeReadOnly(t *testing.T) {
+	var calls [][]string
+	stubExecCommand(t, &calls)
+	dir := t.TempDir()
+	claude := filepath.Join(dir, ".claude")
+	if err := os.Mkdir(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code := Main([]string{"unsafe", "--persist-dir", dir, "--", "true"})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	got := calls[0]
+	if !containsPair(got, "-v", claude+":"+claude+":ro") {
+		t.Errorf(".claude under --persist-dir must be re-mounted read-only: %q", got)
+	}
+}
+
 func TestMainUnsafeReadOnlyRootfsKeepsClaudeUnmounted(t *testing.T) {
 	var calls [][]string
 	stubExecCommand(t, &calls)
