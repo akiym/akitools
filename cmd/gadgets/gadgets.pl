@@ -30,7 +30,7 @@ for my $key (sort keys %opt) {
                 push @args, "--$key";
             }
         } else {
-            push @args, "--$key=$opt{$key}";
+            push @args, "--$key=" . sh_quote($opt{$key});
         }
     }
 }
@@ -129,8 +129,16 @@ for my $sp (keys %add_sp_gadgets) {
 
 print join("\n", map { $_->[2] } sort { $a->[0] <=> $b->[0] or $a->[1] <=> $b->[1] or $a->[2] cmp $b->[2] } @gadgets) . "\n";
 
-my ($bss) = `$READELF -S $opt{file} | grep .bss` =~ /\s*\[\d+\]\s+\.bss\s+NOBITS\s+([0-9a-f]+)\s+/;
+my ($bss) = `$READELF -S @{[ sh_quote($opt{file}) ]} | grep .bss` =~ /\s*\[\d+\]\s+\.bss\s+NOBITS\s+([0-9a-f]+)\s+/;
 printf "\nbss = 0x%x+0x300\n", hex $bss;
+
+# 引数はシェル経由で渡るので、空白やメタ文字で壊れない(そしてコマンドが
+# 生えない)ようにクォートする
+sub sh_quote {
+    my ($s) = @_;
+    $s =~ s/'/'\\''/g;
+    return "'$s'";
+}
 
 sub usage {
     die <<"USAGE";

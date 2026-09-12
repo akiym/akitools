@@ -16,8 +16,8 @@ GetOptions(
 
 my $file = shift or usage();
 
-my $syms = `readelf -sW $file`;
-my $offset = `strings -tx $file`;
+my $syms = `readelf -sW @{[ sh_quote($file) ]}`;
+my $offset = `strings -tx @{[ sh_quote($file) ]}`;
 my (%func, %str);
 
 offset('__libc_start_main');
@@ -39,6 +39,14 @@ for my $k (sort { $str{$a} cmp $str{$b} or $a <=> $b } keys %str) {
     printf "    '%s': 0x%x, # str\n", $str{$k}, $k;
 }
 print "}\n";
+
+# ファイル名はシェル経由で渡るので、空白やメタ文字で壊れない(そして
+# コマンドが生えない)ようにクォートする
+sub sh_quote {
+    my ($s) = @_;
+    $s =~ s/'/'\\''/g;
+    return "'$s'";
+}
 
 sub invert_hash {
     my (%a) = @_;
