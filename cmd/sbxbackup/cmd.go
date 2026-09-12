@@ -119,10 +119,10 @@ func run(args []string) error {
 
 	// Codex/opencode logs live in anonymous snapshots, so they are always
 	// backed up for every sandbox at once, regardless of the targets.
-	total, err := backupSnapshots(croot, root)
-	if err != nil {
-		return err
-	}
+	// A snapshot failure is reported only after the Claude volumes are
+	// saved: an unrelated unreadable snapshot must not cost the logs that
+	// could still be rescued, and returning it later still blocks removal.
+	total, snapErr := backupSnapshots(croot, root)
 
 	for _, s := range targets {
 		n, err := backupClaude(s, croot, root)
@@ -133,6 +133,9 @@ func run(args []string) error {
 	}
 	fmt.Printf("saved %d files to %s\n", total, displayPath(root))
 
+	if snapErr != nil {
+		return snapErr
+	}
 	if flagKeep {
 		return nil
 	}
@@ -498,11 +501,14 @@ func copyTree(fsys fs.FS, src, dstRoot string) ([]string, error) {
 	return copied, err
 }
 
+// writeFile keeps backups unreadable by other users: these files are agent
+// conversation logs, which carry whatever the sessions touched (source,
+// tokens pasted into prompts, tool output).
 func writeFile(dst string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, 0o644)
+	return os.WriteFile(dst, data, 0o600)
 }
 
 // removeSandboxes confirms and removes the named sandboxes in one batch.
