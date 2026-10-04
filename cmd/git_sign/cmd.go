@@ -175,8 +175,11 @@ func hasStagedChanges() (bool, error) {
 	return false, fmt.Errorf("failed to inspect the index: %w", err)
 }
 
+// amendSign re-creates HEAD with a signature. The index is known to match
+// HEAD, so --allow-empty only matters for commits that were empty to begin
+// with (e.g. a root `init` commit), which git would otherwise refuse to amend.
 func amendSign() error {
-	amend := exec.Command("git", "commit", "--amend", "--no-edit", "-S")
+	amend := exec.Command("git", "commit", "--amend", "--no-edit", "--allow-empty", "-S")
 	amend.Env = append(os.Environ(), "HUSKY=0")
 	amend.Stdin = os.Stdin
 	amend.Stdout = os.Stdout

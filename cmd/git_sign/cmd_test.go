@@ -376,3 +376,41 @@ func TestRunWithoutUpstreamStopsAtRemoteTrackingRefs(t *testing.T) {
 	}
 	assertNotMidRebase(t, repo)
 }
+
+// `git commit --amend` refuses to produce an empty commit unless told
+// otherwise, so signing an intentionally empty commit (typically the root
+// `init` commit of a fresh repository) must still succeed.
+func TestRunSignsEmptyRootCommitViaRebase(t *testing.T) {
+	tmp, origin := setupEnv(t)
+	repo := filepath.Join(tmp, "repo")
+	git(t, tmp, "init", repo)
+	git(t, repo, "remote", "add", "origin", origin)
+	git(t, repo, "commit", "--allow-empty", "-m", "init")
+	commit(t, repo, "second")
+	t.Chdir(repo)
+
+	if err := run(); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	want := []string{"G init", "G second"}
+	if got := strings.Split(git(t, repo, "log", "--reverse", "--format=%G? %s"), "\n"); !slices.Equal(got, want) {
+		t.Errorf("log = %v, want %v", got, want)
+	}
+	assertNotMidRebase(t, repo)
+}
+
+func TestRunSignsEmptyHeadByAmend(t *testing.T) {
+	repo := setupRepo(t)
+	git(t, repo, "commit", "--allow-empty", "-m", "empty head")
+
+	if err := run(); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	want := []string{"G empty head"}
+	if got := unpushedLog(t, repo); !slices.Equal(got, want) {
+		t.Errorf("unpushed log = %v, want %v", got, want)
+	}
+	assertNotMidRebase(t, repo)
+}
