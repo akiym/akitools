@@ -47,7 +47,24 @@ func git(t *testing.T, dir string, args ...string) string {
 func setupRepo(t *testing.T) string {
 	t.Helper()
 
-	tmp := t.TempDir()
+	tmp, origin := setupEnv(t)
+
+	repo := filepath.Join(tmp, "repo")
+	git(t, tmp, "init", repo)
+	git(t, repo, "remote", "add", "origin", origin)
+	commit(t, repo, "initial commit")
+	git(t, repo, "push", "-u", "origin", "main")
+
+	t.Chdir(repo)
+	return repo
+}
+
+// setupEnv prepares the isolated gitconfig, signing key and bare origin, and
+// returns the tmpdir and the origin path.
+func setupEnv(t *testing.T) (tmp, origin string) {
+	t.Helper()
+
+	tmp = t.TempDir()
 	home := filepath.Join(tmp, "home")
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)
@@ -83,17 +100,9 @@ func setupRepo(t *testing.T) string {
 		git(t, tmp, "config", "--global", kv[0], kv[1])
 	}
 
-	origin := filepath.Join(tmp, "origin.git")
+	origin = filepath.Join(tmp, "origin.git")
 	git(t, tmp, "init", "--bare", origin)
-
-	repo := filepath.Join(tmp, "repo")
-	git(t, tmp, "init", repo)
-	git(t, repo, "remote", "add", "origin", origin)
-	commit(t, repo, "initial commit")
-	git(t, repo, "push", "-u", "origin", "main")
-
-	t.Chdir(repo)
-	return repo
+	return tmp, origin
 }
 
 func commit(t *testing.T, repo, msg string, extraConfig ...string) {
@@ -314,4 +323,56 @@ func TestRunHeadOnlySkipsForeignCommit(t *testing.T) {
 	if got := revParse(t, repo, "HEAD"); got != head {
 		t.Errorf("HEAD changed: %s -> %s", head, got)
 	}
+}
+
+// A brand-new repository that has `git remote add origin` but has never
+// pushed has no upstream and no remote-tracking refs, so every commit is
+// unpushed and must be signed.
+func TestRunSignsAllCommitsInRepoWithoutUpstream(t *testing.T) {
+	tmp, origin := setupEnv(t)
+	repo := filepath.Join(tmp, "repo")
+	git(t, tmp, "init", repo)
+	git(t, repo, "remote", "add", "origin", origin)
+	commit(t, repo, "first")
+	commit(t, repo, "second")
+	git(t, repo, "branch", "-M", "main")
+	t.Chdir(repo)
+
+	if err := run(); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	want := []string{"G first", "G second"}
+	if got := strings.Split(git(t, repo, "log", "--reverse", "--format=%G? %s"), "\n"); !slices.Equal(got, want) {
+		t.Errorf("log = %v, want %v", got, want)
+	}
+	assertNotMidRebase(t, repo)
+}
+
+// A local branch created off a pushed branch without an upstream must only
+// sign the commits that are not on any remote-tracking branch; the pushed
+// history below the fork point must stay untouched.
+func TestRunWithoutUpstreamStopsAtRemoteTrackingRefs(t *testing.T) {
+	repo := setupRepo(t)
+	commit(t, repo, "pushed but unsigned")
+	git(t, repo, "push", "origin", "main")
+	base := revParse(t, repo, "HEAD")
+	git(t, repo, "checkout", "-b", "feature")
+	commit(t, repo, "feature work")
+
+	if err := run(); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	want := []string{"G feature work"}
+	if got := unpushedLog(t, repo); !slices.Equal(got, want) {
+		t.Errorf("unpushed log = %v, want %v", got, want)
+	}
+	if got := revParse(t, repo, "HEAD^"); got != base {
+		t.Errorf("pushed commit rewritten: %s -> %s", base, got)
+	}
+	if got := git(t, repo, "log", "-1", "--format=%G?", "HEAD^"); got != "N" {
+		t.Errorf("pushed commit signed: status %q", got)
+	}
+	assertNotMidRebase(t, repo)
 }

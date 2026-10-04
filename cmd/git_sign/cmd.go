@@ -110,7 +110,7 @@ func getCommitInfo(ref string) (commitInfo, error) {
 	return c, nil
 }
 
-func resolveUpstream() (string, error) {
+func resolveUpstream() (string, bool) {
 	for _, spec := range []string{"@{upstream}", "@{push}"} {
 		out, err := exec.Command("git", "rev-parse", "--symbolic-full-name", spec).Output()
 		if err != nil {
@@ -118,20 +118,27 @@ func resolveUpstream() (string, error) {
 		}
 		ref := strings.TrimSpace(string(out))
 		if ref != "" {
-			return ref, nil
+			return ref, true
 		}
 	}
-	return "", errors.New("no upstream configured for current branch (set one with `git branch --set-upstream-to=...`)")
+	return "", false
+}
+
+// unpushedRevisionArgs selects the commits that are not yet on a remote. With
+// an upstream, that is everything past it. Without one (a repository that has
+// never pushed, or a local branch forked off a pushed one), fall back to the
+// commits unreachable from every remote-tracking ref: that covers the whole
+// history of a fresh repository while leaving already-pushed history alone.
+func unpushedRevisionArgs() []string {
+	if upstream, ok := resolveUpstream(); ok {
+		return []string{upstream + "..HEAD"}
+	}
+	return []string{"HEAD", "--not", "--remotes"}
 }
 
 func listUnpushedHashes() ([]string, error) {
-	upstream, err := resolveUpstream()
-	if err != nil {
-		return nil, err
-	}
-	rangeSpec := upstream + "..HEAD"
-
-	out, err := exec.Command("git", "log", "--reverse", "--format=%H", rangeSpec).Output()
+	args := append([]string{"log", "--reverse", "--format=%H"}, unpushedRevisionArgs()...)
+	out, err := exec.Command("git", args...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list unpushed commits: %w", err)
 	}
