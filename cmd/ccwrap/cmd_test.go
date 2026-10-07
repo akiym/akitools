@@ -3,6 +3,7 @@ package ccwrap
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -125,4 +126,71 @@ func TestDataDirKeepsExistingNewLayout(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(base, "ccwrap", "old.har")); err != nil {
 		t.Error("old dir should be left untouched when new dir exists")
 	}
+}
+
+func TestWaitForListenParsesMitmdumpLine(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		defer w.Close()
+		fmt.Fprintln(w, "[01:42:00.706] Loading script foo")
+		fmt.Fprintln(w, "[01:42:00.706] reverse proxy to https://api.anthropic.com listening at 127.0.0.1:58527.")
+		fmt.Fprintln(w, "[01:42:01.000] client connect")
+	}()
+	port, err := waitForListen(r, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if port != 58527 {
+		t.Errorf("port = %d, want 58527", port)
+	}
+}
+
+func TestWaitForListenFailsOnExit(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		defer w.Close()
+		fmt.Fprintln(w, "[01:42:00.706] Error: address already in use")
+	}()
+	if _, err := waitForListen(r, time.Second); err == nil {
+		t.Fatal("expected an error when mitmdump exits without listening")
+	}
+}
+
+func TestWaitForListenTimesOut(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if _, err := waitForListen(r, 50*time.Millisecond); err == nil {
+		t.Fatal("expected a timeout")
+	}
+}
+
+// Needs a real mitmdump on PATH; the port it reports must be one it
+// actually bound, so a connection to it must succeed.
+func TestStartMitmdumpReportsBoundPort(t *testing.T) {
+	if _, err := exec.LookPath("mitmdump"); err != nil {
+		t.Skip("mitmdump not installed")
+	}
+	mitmFile := filepath.Join(t.TempDir(), "x.mitm")
+	proc, err := startMitmdump(mitmFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proc.stop()
+	if proc.port <= 0 {
+		t.Fatalf("port = %d", proc.port)
+	}
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", proc.port))
+	if err != nil {
+		t.Fatalf("dial reported port: %v", err)
+	}
+	conn.Close()
 }

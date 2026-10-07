@@ -1,13 +1,15 @@
 package ccwrap
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
-	"net"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -66,26 +68,95 @@ func dataDir() (string, error) {
 	return newDir, nil
 }
 
-func findFreePort() (int, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
+// listenLine はmitmdumpがbindを終えたときにtermlogへ出す行
+// ("... listening at 127.0.0.1:12345.")。ポートはgetsockname由来なので
+// listen-port 0 で起動してもmitmdumpが実際に確保したポートが得られる
+var listenLine = regexp.MustCompile(`listening at 127\.0\.0\.1:(\d+)\b`)
+
+// waitForListen はmitmdumpのstdoutからbind済みポートを読み取る。
+// 自分で空きポートを選んでから渡す方式だと、closeからmitmdumpのbindまでの
+// 間に同じホストの別プロセスがそのポートを奪え、claudeは認証ヘッダごと
+// そこへ送ってしまう。mitmdump自身が報告したポートなら所有者は確定する。
+// 行が来る前にstdoutが閉じたらmitmdumpは起動に失敗している。
+// 読み取り後もEOFまで捨て続け、パイプが詰まってmitmdumpが止まらないようにする
+func waitForListen(r io.Reader, timeout time.Duration) (int, error) {
+	type result struct {
+		port int
+		err  error
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port, nil
+	ch := make(chan result, 1)
+	go func() {
+		scanner := bufio.NewScanner(r)
+		found := false
+		for scanner.Scan() {
+			if found {
+				continue
+			}
+			if m := listenLine.FindStringSubmatch(scanner.Text()); m != nil {
+				port, err := strconv.Atoi(m[1])
+				ch <- result{port, err}
+				found = true
+			}
+		}
+		if !found {
+			ch <- result{0, errors.New("mitmdump exited before listening")}
+		}
+	}()
+	select {
+	case res := <-ch:
+		return res.port, res.err
+	case <-time.After(timeout):
+		return 0, errors.New("timeout waiting for mitmdump to listen")
+	}
 }
 
-func waitForPort(port int, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
-		if err == nil {
-			conn.Close()
-			return nil
-		}
-		time.Sleep(50 * time.Millisecond)
+type mitmdumpProc struct {
+	cmd  *exec.Cmd
+	port int
+	once sync.Once
+}
+
+func (p *mitmdumpProc) stop() {
+	p.once.Do(func() {
+		_ = p.cmd.Process.Signal(syscall.SIGTERM)
+		_ = p.cmd.Wait()
+	})
+}
+
+// startMitmdump はreverse proxyをOS任せのポートで起動し、mitmdumpが
+// 報告したポートを返す
+func startMitmdump(mitmFile string) (*mitmdumpProc, error) {
+	cmd := exec.Command("mitmdump",
+		"--mode", "reverse:https://api.anthropic.com",
+		"--listen-host", "127.0.0.1",
+		"--listen-port", "0",
+		"--set", "flow_detail=0",
+		"--set", "stream_large_bodies=1",
+		"--store-streamed-bodies",
+		"-w", mitmFile,
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
 	}
-	return fmt.Errorf("timeout waiting for port %d", port)
+	// stdoutがパイプだとPythonはブロックバッファリングするので、
+	// listening行が即座に届くよう無効化する
+	cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
+	cmd.Stderr = os.Stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start mitmdump: %w", err)
+	}
+	p := &mitmdumpProc{cmd: cmd}
+	port, err := waitForListen(stdout, 5*time.Second)
+	if err != nil {
+		p.stop()
+		return nil, fmt.Errorf("mitmdump not ready: %w", err)
+	}
+	p.port = port
+	return p, nil
 }
 
 func filterEnv(env []string, key string) []string {
@@ -246,11 +317,6 @@ func run(args []string) (int, error) {
 		return 1, fmt.Errorf("tighten log dir: %w", err)
 	}
 
-	port, err := findFreePort()
-	if err != nil {
-		return 1, fmt.Errorf("find free port: %w", err)
-	}
-
 	mitmFile := filepath.Join(logDir, timestamp+".mitm")
 	harFile := filepath.Join(logDir, timestamp+".har")
 	lockFile := filepath.Join(logDir, timestamp+".lock")
@@ -268,34 +334,12 @@ func run(args []string) (int, error) {
 	}
 	defer os.Remove(lockFile)
 
-	mitmdump := exec.Command("mitmdump",
-		"--quiet",
-		"--mode", "reverse:https://api.anthropic.com",
-		"--listen-host", "127.0.0.1",
-		"--listen-port", strconv.Itoa(port),
-		"--set", "stream_large_bodies=1",
-		"--store-streamed-bodies",
-		"-w", mitmFile,
-	)
-	mitmdump.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
+	mitmdump, err := startMitmdump(mitmFile)
+	if err != nil {
+		return 1, err
 	}
-	mitmdump.Stderr = os.Stderr
-	if err := mitmdump.Start(); err != nil {
-		return 1, fmt.Errorf("start mitmdump: %w", err)
-	}
-	var cleanupOnce sync.Once
-	cleanupMitmdump := func() {
-		cleanupOnce.Do(func() {
-			_ = mitmdump.Process.Signal(syscall.SIGTERM)
-			_ = mitmdump.Wait()
-		})
-	}
-
-	if err := waitForPort(port, 5*time.Second); err != nil {
-		cleanupMitmdump()
-		return 1, fmt.Errorf("mitmdump not ready: %w", err)
-	}
+	cleanupMitmdump := mitmdump.stop
+	port := mitmdump.port
 
 	claudeArgs := append([]string{"--scheme=intellij://idea", "claude"}, args...)
 	claude := exec.Command("osc8wrap", claudeArgs...)
