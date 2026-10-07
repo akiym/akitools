@@ -491,12 +491,40 @@ func confirmSettings() (bool, error) {
 	return false, nil
 }
 
+// managedDenyWrite は allowWrite "." の中で sandbox 内の Bash に書かせない
+// パス。sandbox-runtime の必須 deny は .mcp.json と .claude/commands,
+// .claude/agents などに限られ、ここに挙げるものは含まれない。
+// confirmSettings のハッシュ照合は次回起動時にしか効かないので、
+// 走っているセッションの中で起動時設定や hooks を書き換えられると
+// 承認の意味がなくなる。.claude/.ccwrap は allowUnixSockets の対象でも
+// あり、そこに別 socket への symlink を置かれると broker 以外へ繋がりうる
+var managedDenyWrite = []string{
+	ccwrapDirRel,
+	projectSettingsFile,
+	projectLocalSettingsFile,
+	filepath.Join(".claude", "hooks"),
+	filepath.Join(".claude", "skills"),
+	"CLAUDE.md",
+	"CLAUDE.local.md",
+}
+
 // managedFilesystem は sandbox.filesystem が ccwrap の書き込んだ形
-// (現行の broker.sock 入り、または旧来の同一パス1つずつ)かを判定する。
-// managed であれば現行の形へ書き換えてよい
+// (現行の denyWrite 入り、denyWrite 導入前、または旧来の同一パス1つずつ)
+// かを判定する。managed であれば現行の形へ書き換えてよい。
+// denyWrite をユーザーが変えている場合は managed 扱いにしない
 func managedFilesystem(fs any) bool {
 	m, ok := fs.(map[string]any)
-	if !ok || len(m) != 2 {
+	if !ok {
+		return false
+	}
+	switch len(m) {
+	case 2:
+	case 3:
+		deny, ok := stringSlice(m["denyWrite"])
+		if !ok || !slices.Equal(deny, managedDenyWrite) {
+			return false
+		}
+	default:
 		return false
 	}
 	read, ok := stringSlice(m["allowRead"])
@@ -527,12 +555,13 @@ func isTargetFilesystem(read, write []string) bool {
 
 func isTargetFilesystemValue(v any) bool {
 	m, ok := v.(map[string]any)
-	if !ok || len(m) != 2 {
+	if !ok || len(m) != 3 {
 		return false
 	}
 	read, rok := stringSlice(m["allowRead"])
 	write, wok := stringSlice(m["allowWrite"])
-	return rok && wok && isTargetFilesystem(read, write)
+	deny, dok := stringSlice(m["denyWrite"])
+	return rok && wok && dok && isTargetFilesystem(read, write) && slices.Equal(deny, managedDenyWrite)
 }
 
 // managedNetwork は sandbox.network が ccwrap の書き込んだ形
@@ -609,6 +638,7 @@ func ensureLocalSandboxSettings() error {
 		sandbox["filesystem"] = map[string]any{
 			"allowRead":  []string{".", ccwrapDirRel},
 			"allowWrite": []string{"."},
+			"denyWrite":  managedDenyWrite,
 		}
 		changed = true
 	}

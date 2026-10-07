@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -271,6 +272,13 @@ func assertTargetSandbox(t *testing.T, settings map[string]any) {
 	}
 	if want := []any{"."}; !reflect.DeepEqual(fs["allowWrite"], want) {
 		t.Errorf("allowWrite = %v, want %v", fs["allowWrite"], want)
+	}
+	wantDeny := make([]any, len(managedDenyWrite))
+	for i, d := range managedDenyWrite {
+		wantDeny[i] = d
+	}
+	if !reflect.DeepEqual(fs["denyWrite"], wantDeny) {
+		t.Errorf("denyWrite = %v, want %v", fs["denyWrite"], wantDeny)
 	}
 	network := sandbox["network"].(map[string]any)
 	if want := []any{ccwrapDirRel}; !reflect.DeepEqual(network["allowUnixSockets"], want) {
@@ -564,6 +572,36 @@ func TestFindAutoLoadedFilesClaudeNotDir(t *testing.T) {
 	}
 }
 
+func anySlice(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
+}
+
+func TestEnsureLocalSandboxSettingsAddsDenyWrite(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	writeLocalSettings(t, dir, `{"sandbox":{
+		"filesystem":{"allowRead":[".",".claude/.ccwrap"],"allowWrite":["."]},
+		"network":{"allowUnixSockets":[".claude/.ccwrap"]}}}`)
+
+	if err := ensureLocalSandboxSettings(); err != nil {
+		t.Fatal(err)
+	}
+
+	assertTargetSandbox(t, readLocalSettings(t, dir))
+}
+
+func TestManagedDenyWriteCoversCcwrapAndSettings(t *testing.T) {
+	for _, want := range []string{ccwrapDirRel, projectSettingsFile, projectLocalSettingsFile, "CLAUDE.md"} {
+		if !slices.Contains(managedDenyWrite, want) {
+			t.Errorf("managedDenyWrite is missing %q", want)
+		}
+	}
+}
+
 func TestManagedFilesystem(t *testing.T) {
 	tests := []struct {
 		name string
@@ -573,7 +611,9 @@ func TestManagedFilesystem(t *testing.T) {
 		{"legacyAbs", map[string]any{"allowRead": []any{"/p"}, "allowWrite": []any{"/p"}}, true},
 		{"legacyDot", map[string]any{"allowRead": []any{"."}, "allowWrite": []any{"."}}, true},
 		{"legacyBrokerSock", map[string]any{"allowRead": []any{".", legacyBrokerSocketRel}, "allowWrite": []any{"."}}, true},
-		{"current", map[string]any{"allowRead": []any{".", ccwrapDirRel}, "allowWrite": []any{"."}}, true},
+		{"previousNoDeny", map[string]any{"allowRead": []any{".", ccwrapDirRel}, "allowWrite": []any{"."}}, true},
+		{"current", map[string]any{"allowRead": []any{".", ccwrapDirRel}, "allowWrite": []any{"."}, "denyWrite": anySlice(managedDenyWrite)}, true},
+		{"customDeny", map[string]any{"allowRead": []any{".", ccwrapDirRel}, "allowWrite": []any{"."}, "denyWrite": []any{"secrets"}}, false},
 		{"differentPaths", map[string]any{"allowRead": []any{"/a"}, "allowWrite": []any{"/b"}}, false},
 		{"extraKey", map[string]any{"allowRead": []any{"/p"}, "allowWrite": []any{"/p"}, "denyRead": []any{"/x"}}, false},
 		{"multipleEntries", map[string]any{"allowRead": []any{"/p", "/q"}, "allowWrite": []any{"/p"}}, false},
