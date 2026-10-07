@@ -433,3 +433,116 @@ func TestValidateImage(t *testing.T) {
 		}
 	}
 }
+
+// A subdirectory request must not be mounted by its own path: the
+// client can swap that path for a symlink after validation. Only the
+// allowed directory is mounted, and the request becomes the workdir.
+func TestBrokerMountsAllowedDirForSubdirRequest(t *testing.T) {
+	var rec callRecorder
+	stubExecCommandContext(t, &rec, "true")
+	allowed, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(allowed, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := testBrokerConfig
+	cfg.allowRootfs = allowed
+
+	req, err := json.Marshal(brokerRequest{Image: "alpine:3", Command: []string{"true"}, Rootfs: sub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, exit := serveOneRequest(t, cfg, req, nil)
+	if exit.Code != 0 || exit.Error != "" {
+		t.Fatalf("exit = %+v, want code 0", exit)
+	}
+	calls := rec.all()
+	if len(calls) != 1 {
+		t.Fatalf("docker invocations = %d, want 1", len(calls))
+	}
+	if !containsPair(calls[0], "-v", allowed+":"+allowed+":ro") {
+		t.Errorf("allowed dir must be the mount: %q", calls[0])
+	}
+	if containsPair(calls[0], "-v", sub+":"+sub+":ro") {
+		t.Errorf("subdirectory must not be mounted by its own path: %q", calls[0])
+	}
+	if !containsPair(calls[0], "-w", sub) {
+		t.Errorf("requested dir must become the workdir: %q", calls[0])
+	}
+}
+
+func TestBrokerKeepsClientWorkdirForSubdirRequest(t *testing.T) {
+	var rec callRecorder
+	stubExecCommandContext(t, &rec, "true")
+	allowed, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(allowed, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := testBrokerConfig
+	cfg.allowRootfs = allowed
+
+	req, err := json.Marshal(brokerRequest{Image: "alpine:3", Command: []string{"true"}, Rootfs: sub, Workdir: "/elsewhere"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, exit := serveOneRequest(t, cfg, req, nil)
+	if exit.Code != 0 || exit.Error != "" {
+		t.Fatalf("exit = %+v, want code 0", exit)
+	}
+	calls := rec.all()
+	if len(calls) != 1 || !containsPair(calls[0], "-w", "/elsewhere") {
+		t.Errorf("explicit workdir must win: %q", calls)
+	}
+}
+
+// Regression for the validate-then-mount race: the path handed to docker
+// must still resolve inside the allowed directory even if the client
+// turns the requested subdirectory into a symlink right after validation.
+func TestBrokerRootfsMountSurvivesLateSymlinkSwap(t *testing.T) {
+	allowed, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(allowed, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := execCommandContext
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		src := ""
+		for i, a := range args {
+			if a == "-v" {
+				src = strings.SplitN(args[i+1], ":", 2)[0]
+			}
+		}
+		// Stands in for docker CLI startup plus the daemon round trip.
+		return exec.CommandContext(ctx, "sh", "-c", `sleep 0.2; readlink -f "$1"`, "sh", src)
+	}
+	t.Cleanup(func() { execCommandContext = orig })
+
+	cfg := testBrokerConfig
+	cfg.allowRootfs = allowed
+	req, err := json.Marshal(brokerRequest{Image: "alpine:3", Command: []string{"true"}, Rootfs: sub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		_ = os.Rename(sub, sub+".bak")
+		_ = os.Symlink("/etc", sub)
+	}()
+	out, _, exit := serveOneRequest(t, cfg, req, nil)
+	if exit.Code != 0 {
+		t.Fatalf("exit = %+v", exit)
+	}
+	if got := strings.TrimSpace(string(out)); got != allowed {
+		t.Errorf("docker mounted %q, want %q", got, allowed)
+	}
+}

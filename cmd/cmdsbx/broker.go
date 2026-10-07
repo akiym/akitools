@@ -44,8 +44,9 @@ const (
 // widens what sandboxed clients can request; anything isolation-weakening
 // belongs to `cmdsbx unsafe`, which the broker deliberately cannot run.
 // Rootfs is the one concession: it is honored only when the broker was
-// started with an allowed directory, is confined to that directory's
-// subtree, and always mounts read-only.
+// started with an allowed directory and must resolve inside that
+// directory's subtree. What gets mounted (read-only) is always the
+// allowed directory itself; the request only selects the workdir.
 type brokerRequest struct {
 	Image   string   `json:"image"`
 	Command []string `json:"command"`
@@ -64,8 +65,9 @@ type brokerConfig struct {
 	memory        string
 	pidsLimit     int
 	maxConcurrent int
-	// allowRootfs is the symlink-resolved directory whose subtree clients
-	// may request as a read-only rootfs mount; empty rejects all requests.
+	// allowRootfs is the symlink-resolved directory that clients may
+	// request (by it or a path below it) as a read-only rootfs mount;
+	// empty rejects all requests.
 	allowRootfs string
 	logger      *slog.Logger
 }
@@ -76,8 +78,9 @@ type BrokerOptions struct {
 	Memory        string // "" disables the memory limit
 	PidsLimit     int    // 0 disables the pids limit
 	MaxConcurrent int
-	// AllowRootfs is a symlink-resolved absolute directory whose subtree
-	// clients may request as a read-only rootfs mount ("" rejects all).
+	// AllowRootfs is a symlink-resolved absolute directory that clients
+	// may request (by it or a path below it) as a read-only rootfs mount
+	// ("" rejects all).
 	AllowRootfs string
 	Logger      *slog.Logger
 }
@@ -143,9 +146,9 @@ func cmdBroker(args []string) int {
 	fs.StringVar(&opts.Memory, "memory", opts.Memory, "container memory limit (empty to disable)")
 	fs.IntVar(&opts.PidsLimit, "pids-limit", opts.PidsLimit, "container pids limit (0 to disable)")
 	fs.IntVar(&opts.MaxConcurrent, "max-concurrent", opts.MaxConcurrent, "max concurrent commands")
-	allowRootfs := fs.String("allow-rootfs", "", "host directory whose subtree clients may request as a read-only rootfs mount")
+	allowRootfs := fs.String("allow-rootfs", "", "host directory clients may request as a read-only rootfs mount (requests below it set the workdir)")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: cmdsbx broker [options]\n\nServe 'cmdsbx do' requests over a unix socket so that sandboxed\nclients can run disposable containers without access to the Docker\nsocket. Only no-mount, no-network, no-pull runs can be requested,\nplus read-only rootfs mounts under -allow-rootfs when set.\n\nOptions:\n")
+		fmt.Fprint(os.Stderr, "Usage: cmdsbx broker [options]\n\nServe 'cmdsbx do' requests over a unix socket so that sandboxed\nclients can run disposable containers without access to the Docker\nsocket. Only no-mount, no-network, no-pull runs can be requested,\nplus a read-only mount of the -allow-rootfs directory when set.\n\nOptions:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -314,18 +317,29 @@ func serveConn(ctx context.Context, conn net.Conn, cfg brokerConfig) {
 		return
 	}
 	_ = conn.SetReadDeadline(time.Time{})
-	rootfs := ""
+	rootfs, workdir := "", req.Workdir
 	if req.Rootfs != "" {
-		rootfs, err = allowedRootfs(req.Rootfs, cfg.allowRootfs)
+		requested, err := allowedRootfs(req.Rootfs, cfg.allowRootfs)
 		if err != nil {
 			writeExit(fw, 2, err.Error())
 			return
+		}
+		// Only the allowed directory itself is ever handed to docker as a
+		// mount source. The validated path is still a string that docker
+		// resolves again at mount time, and a client that can write inside
+		// the allowed tree could swap a subdirectory for a symlink between
+		// validation and the daemon's bind mount. The allowed directory's
+		// own components are outside what such a client can write, so the
+		// request only ever narrows the workdir.
+		rootfs = cfg.allowRootfs
+		if workdir == "" {
+			workdir = requested
 		}
 	}
 	o := &RunOptions{
 		Image:     req.Image,
 		Rootfs:    rootfs,
-		Workdir:   req.Workdir,
+		Workdir:   workdir,
 		Env:       req.Env,
 		Command:   req.Command,
 		NoPull:    true,
@@ -386,9 +400,10 @@ func serveConn(ctx context.Context, conn net.Conn, cfg brokerConfig) {
 	}
 }
 
-// allowedRootfs validates a client-requested read-only rootfs mount:
-// the request must be an absolute path that resolves (symlinks
-// included) to the broker's allowed directory or below it.
+// allowedRootfs validates a client-requested read-only rootfs: the
+// request must be an absolute path that resolves (symlinks included) to
+// the broker's allowed directory or below it. The returned path is only
+// safe to use as a workdir; see serveConn for why it is never mounted.
 func allowedRootfs(requested, allowed string) (string, error) {
 	if allowed == "" {
 		return "", errors.New("broker does not allow rootfs mounts")

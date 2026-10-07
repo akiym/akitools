@@ -30,7 +30,7 @@ propagate to the caller.
 - `--image IMAGE`     container image (default `ubuntu:24.04`)
 - `--env KEY=VALUE`   set an environment variable; repeat for multiple
 - `--workdir DIR`     working directory inside the container
-- `--mount-cwd-ro`    mount cwd read-only at the same path (see below)
+- `--mount-cwd-ro`    mount the project read-only at the same path, cwd as workdir (see below)
 - `-i`                stream stdin into the container (needed for stdin-piped commands and heredocs)
 
 ```bash
@@ -64,8 +64,10 @@ Pass input via stdin (with `-i`) or `--env`; collect results from stdout.
 ## Read-only project access: `--mount-cwd-ro`
 
 When the command needs to READ project files (run tests, lint, inspect
-sources), add `--mount-cwd-ro`: the current directory is mounted read-only
-at the same path and becomes the default workdir.
+sources), add `--mount-cwd-ro`: the project directory the broker allows
+(the ccwrap project root) is mounted read-only at the same path, and the
+current directory becomes the workdir. Running from a subdirectory
+therefore still mounts the whole project, not just that subdirectory.
 
 ```bash
 cmdsbx do --mount-cwd-ro --image golang:1.26 -- go test ./...
