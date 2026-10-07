@@ -149,12 +149,19 @@ func BuildRunArgs(o *RunOptions) ([]string, error) {
 // sandboxed command. The cwd set by docker -w still references the
 // pre-mount read-only bind mount, so re-enter it to resolve into the
 // overlay before exec.
+//
+// CAP_SYS_ADMIN is only needed for the mount itself; it is removed from
+// the bounding set before the command runs because, in docker's default
+// (non-user-namespaced) container, it would also let the command remount
+// the read-only rootfs and .claude binds read-write and write through to
+// the host. setpriv is part of util-linux, so an image lacking it fails
+// here rather than running with the capability.
 func overlayScript(rootfs string) string {
 	q := shellQuote(rootfs)
 	return fmt.Sprintf(
 		"set -e; mkdir -p %[1]s/upper %[1]s/work; "+
 			"mount -t overlay overlay -o lowerdir=%[2]s,upperdir=%[1]s/upper,workdir=%[1]s/work %[2]s; "+
-			`cd "$PWD"; exec "$@"`,
+			`cd "$PWD"; exec setpriv --bounding-set=-sys_admin --inh-caps=-all -- "$@"`,
 		overlayBase, q)
 }
 

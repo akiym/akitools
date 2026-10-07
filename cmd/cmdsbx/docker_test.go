@@ -148,7 +148,7 @@ func TestBuildRunArgsOverlay(t *testing.T) {
 		t.Fatalf("overlay command should be wrapped in sh -c: %q", tail)
 	}
 	script := tail[2]
-	for _, part := range []string{"mount -t overlay", "lowerdir='/work/proj'", "upperdir=/.sandbox/overlay/upper", `cd "$PWD"; exec "$@"`} {
+	for _, part := range []string{"mount -t overlay", "lowerdir='/work/proj'", "upperdir=/.sandbox/overlay/upper", `cd "$PWD"; exec setpriv --bounding-set=-sys_admin --inh-caps=-all -- "$@"`} {
 		if !strings.Contains(script, part) {
 			t.Errorf("overlay script missing %q: %s", part, script)
 		}
