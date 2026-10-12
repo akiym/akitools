@@ -120,7 +120,7 @@ func serveOneRequest(t *testing.T, cfg brokerConfig, req, stdin []byte) (stdout,
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		serveConn(context.Background(), server, cfg)
+		serveConn(t.Context(), server, cfg)
 	}()
 	defer func() { <-done }()
 
@@ -257,7 +257,7 @@ func startBroker(t *testing.T, cfg brokerConfig) string {
 	if err != nil {
 		t.Skipf("cannot bind unix socket: %v", err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

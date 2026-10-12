@@ -95,7 +95,7 @@ var methodTitleRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*\s*\(`)
 
 func detectKind(relPath, title string, level int) string {
 	category := ""
-	for _, seg := range strings.Split(strings.ToLower(path.Clean(relPath)), "/") {
+	for seg := range strings.SplitSeq(strings.ToLower(path.Clean(relPath)), "/") {
 		seg = strings.TrimSuffix(seg, path.Ext(seg))
 		switch {
 		case strings.Contains(seg, "faq"):

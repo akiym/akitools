@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -549,7 +548,7 @@ func TestFindAutoLoadedFilesClaudeSymlinkedDir(t *testing.T) {
 		filepath.Join(".claude", "CLAUDE.md"),
 		filepath.Join(".claude", "skills", "deploy", "SKILL.md"),
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 	if !reflect.DeepEqual(files, want) {
 		t.Errorf("files = %v, want %v", files, want)
 	}

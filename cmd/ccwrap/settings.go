@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
 )
 
@@ -45,12 +45,7 @@ func loadSettings(path string) (map[string]any, error) {
 }
 
 func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
+	return slices.Sorted(maps.Keys(m))
 }
 
 func findOverrides(global, project map[string]any, prefix string) []settingsOverride {
@@ -350,12 +345,7 @@ func autoLoadedPath(rel string) bool {
 	case "CLAUDE.md", "CLAUDE.local.md", ".claude":
 		return true
 	}
-	for _, seg := range strings.Split(filepath.Dir(rel), string(filepath.Separator)) {
-		if seg == ".claude" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(strings.Split(filepath.Dir(rel), string(filepath.Separator)), ".claude")
 }
 
 var (

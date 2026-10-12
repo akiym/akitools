@@ -278,8 +278,8 @@ func getPageChunks(db *sql.DB, path string) ([]Chunk, error) {
 		return nil, err
 	}
 	if len(chunks) == 0 {
-		if i := strings.IndexByte(path, '#'); i >= 0 {
-			if chunks, err = queryPageChunks(db, path[:i]); err != nil {
+		if before, _, ok := strings.Cut(path, "#"); ok {
+			if chunks, err = queryPageChunks(db, before); err != nil {
 				return nil, err
 			}
 		}

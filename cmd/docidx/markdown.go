@@ -20,7 +20,7 @@ func parseMarkdownSections(src string) (string, []*section) {
 	inFence := false
 	var fenceChar byte
 	fenceLen := 0
-	for _, line := range strings.Split(src, "\n") {
+	for line := range strings.SplitSeq(src, "\n") {
 		trimmed := strings.TrimSpace(line)
 
 		if inFence {

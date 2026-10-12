@@ -13,7 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -111,8 +111,8 @@ func fetchZealDocsets(cachePath string) ([]zealDocset, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, fmt.Errorf("decode zeal API: %w", err)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	slices.SortFunc(out, func(a, b zealDocset) int {
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 	})
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err == nil {
 		if f, err := os.Create(cachePath); err == nil {
@@ -191,8 +191,7 @@ func fzfPickZeal(items []zealDocset) (*zealDocset, error) {
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 130 {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 130 {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("fzf: %w", err)
@@ -211,11 +210,8 @@ func fzfPickZeal(items []zealDocset) (*zealDocset, error) {
 
 func numberedPickZeal(items []zealDocset) (*zealDocset, error) {
 	total := len(items)
-	shown := total
-	if shown > zealMenuLimit {
-		shown = zealMenuLimit
-	}
-	for i := 0; i < shown; i++ {
+	shown := min(total, zealMenuLimit)
+	for i := range shown {
 		d := items[i]
 		line := fmt.Sprintf("%3d  %s\tv%s", i+1, d.Name, d.Version)
 		if d.Author.Name != "" {

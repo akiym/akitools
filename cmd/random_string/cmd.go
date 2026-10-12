@@ -67,7 +67,7 @@ func run(args []string) error {
 
 	randMax := big.NewInt(int64(len(chars)))
 	ret := make([]rune, length)
-	for i := 0; i < length; i++ {
+	for i := range length {
 		randInt, err := rand.Int(rand.Reader, randMax)
 		if err != nil {
 			return err

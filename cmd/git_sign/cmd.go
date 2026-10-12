@@ -61,8 +61,8 @@ func indent(s, prefix string) string {
 }
 
 func firstLine(s string) string {
-	if i := strings.Index(s, "\n"); i >= 0 {
-		return s[:i]
+	if before, _, ok := strings.Cut(s, "\n"); ok {
+		return before
 	}
 	return s
 }
@@ -168,8 +168,7 @@ func hasStagedChanges() (bool, error) {
 	if err == nil {
 		return false, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
 		return true, nil
 	}
 	return false, fmt.Errorf("failed to inspect the index: %w", err)

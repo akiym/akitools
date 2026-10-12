@@ -293,7 +293,7 @@ func isSelfLink(n *html.Node) bool {
 	}
 	for _, a := range n.Attr {
 		if a.Key == "class" {
-			for _, c := range strings.Fields(a.Val) {
+			for c := range strings.FieldsSeq(a.Val) {
 				if selfLinkClasses[strings.ToLower(c)] {
 					return true
 				}

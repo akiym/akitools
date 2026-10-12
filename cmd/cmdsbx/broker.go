@@ -290,12 +290,10 @@ func serveListener(ctx context.Context, ln net.Listener, cfg brokerConfig) {
 			conn.Close()
 			return
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer func() { <-sem }()
 			serveConn(ctx, conn, cfg)
-		}()
+		})
 	}
 }
 
@@ -387,11 +385,10 @@ func serveConn(ctx context.Context, conn net.Conn, cfg brokerConfig) {
 		writeExit(fw, 124, msg)
 		return
 	}
-	var ee *exec.ExitError
-	switch {
+	switch ee, isExit := errors.AsType[*exec.ExitError](err); {
 	case err == nil:
 		writeExit(fw, 0, "")
-	case errors.As(err, &ee):
+	case isExit:
 		writeExit(fw, ee.ExitCode(), "")
 	case errors.Is(err, exec.ErrWaitDelay):
 		writeExit(fw, cmd.ProcessState.ExitCode(), "")

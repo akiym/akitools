@@ -397,8 +397,7 @@ func run(args []string) (int, error) {
 	}
 
 	if claudeErr != nil {
-		var exitErr *exec.ExitError
-		if errors.As(claudeErr, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](claudeErr); ok {
 			return exitErr.ExitCode(), nil
 		}
 		return 1, fmt.Errorf("claude: %w", claudeErr)

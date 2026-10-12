@@ -71,7 +71,7 @@ func TestApplyHerdrAgentHintExecs(t *testing.T) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestApplyHerdrAgentHintExecs$", "-test.v")
 	cmd.Env = append(filterEnv(filterEnv(os.Environ(), "HERDR_AGENT"), "HERDR_PANE_ID"),

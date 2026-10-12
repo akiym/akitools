@@ -1,6 +1,6 @@
 module github.com/akiym/akitools
 
-go 1.26
+go 1.27
 
 require (
 	codeberg.org/readeck/go-readability/v2 v2.1.2
