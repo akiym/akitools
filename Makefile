@@ -26,6 +26,9 @@ COMMANDS = \
 	wag \
 	wfind
 
+.PHONY: all
+all: build
+
 .PHONY: build
 build: bin $(COMMANDS)
 
@@ -48,18 +51,22 @@ $(COMMANDS):
 	ln -sf akitools bin/darwin-arm64/$@
 	ln -sf akitools bin/linux-amd64/$@
 
-.PHONY: clean
-clean:
-	rm -rf bin/*
-
+# -race needs cgo, i.e. a C compiler and libc headers on the machine.
 .PHONY: test
 test:
-	go test -v -race ./...
+	go test -race ./...
 
-.PHONY: lint
-lint:
-	golangci-lint run
-
+# golangci-lint comes from PATH; the version is pinned in mise.toml.
 .PHONY: fmt
 fmt:
 	golangci-lint fmt
+
+# `run` does not check formatting, hence both steps.
+.PHONY: check
+check:
+	golangci-lint fmt --diff
+	golangci-lint run
+
+.PHONY: clean
+clean:
+	rm -rf bin/*
