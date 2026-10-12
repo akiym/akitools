@@ -5,7 +5,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -87,7 +87,7 @@ func readZealCache(path string) ([]zealDocset, error) {
 	}
 	defer f.Close()
 	var out []zealDocset
-	if err := json.NewDecoder(f).Decode(&out); err != nil {
+	if err := json.UnmarshalRead(f, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -108,7 +108,7 @@ func fetchZealDocsets(cachePath string) ([]zealDocset, error) {
 		return nil, fmt.Errorf("zeal API %s: %s", zealAPIURL, resp.Status)
 	}
 	var out []zealDocset
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &out); err != nil {
 		return nil, fmt.Errorf("decode zeal API: %w", err)
 	}
 	slices.SortFunc(out, func(a, b zealDocset) int {
@@ -116,7 +116,7 @@ func fetchZealDocsets(cachePath string) ([]zealDocset, error) {
 	})
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err == nil {
 		if f, err := os.Create(cachePath); err == nil {
-			_ = json.NewEncoder(f).Encode(out)
+			_ = json.MarshalWrite(f, out)
 			f.Close()
 		}
 	}

@@ -1,10 +1,9 @@
 package cmdsbx
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -441,10 +440,8 @@ func readRequest(r io.Reader) (*brokerRequest, error) {
 	if _, err := io.ReadFull(r, buf); err != nil {
 		return nil, err
 	}
-	dec := json.NewDecoder(bytes.NewReader(buf))
-	dec.DisallowUnknownFields()
 	var req brokerRequest
-	if err := dec.Decode(&req); err != nil {
+	if err := json.Unmarshal(buf, &req, json.RejectUnknownMembers(true)); err != nil {
 		return nil, err
 	}
 	return &req, nil

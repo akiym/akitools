@@ -1,8 +1,9 @@
 package ccwrap
 
 import (
-	"bytes"
-	"encoding/json"
+	jsonv1 "encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -35,14 +36,26 @@ func loadSettings(path string) (map[string]any, error) {
 		}
 		return nil, err
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
 	var settings map[string]any
-	if err := dec.Decode(&settings); err != nil {
+	if err := json.Unmarshal(data, &settings, json.WithUnmarshalers(useNumber)); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return settings, nil
 }
+
+// v2 には UseNumber が無い。書き戻し時に数値表記を変えないよう、any に入る数値を
+// float64 ではなく元のリテラルのまま保持する
+var useNumber = json.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *any) error {
+	if dec.PeekKind() != '0' {
+		return errors.ErrUnsupported
+	}
+	var n jsonv1.Number
+	if err := json.UnmarshalDecode(dec, &n); err != nil {
+		return err
+	}
+	*v = n
+	return nil
+})
 
 func sortedKeys[V any](m map[string]V) []string {
 	return slices.Sorted(maps.Keys(m))
@@ -218,7 +231,7 @@ func pathsOutsideDir(v any, dir, home string) []any {
 }
 
 func jsonString(v any) string {
-	b, err := json.Marshal(v)
+	b, err := json.Marshal(v, json.Deterministic(true))
 	if err != nil {
 		return fmt.Sprintf("%v", v)
 	}
@@ -645,7 +658,7 @@ func ensureLocalSandboxSettings() error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(settings, "", "  ")
+	data, err := json.Marshal(settings, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

@@ -3,7 +3,8 @@ package ccwrap
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,7 +87,7 @@ func saveApproval(cwd string, files map[string]string) error {
 		ApprovedAt: time.Now(),
 		Files:      files,
 	}
-	data, err := json.MarshalIndent(a, "", "  ")
+	data, err := json.Marshal(a, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

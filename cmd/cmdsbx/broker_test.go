@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"log/slog"
 	"net"
@@ -206,8 +206,8 @@ func TestBrokerRejectsUnknownFields(t *testing.T) {
 
 	req := []byte(`{"image":"alpine:3","command":["true"],"mounts":["/:/host"]}`)
 	_, _, exit := serveOneRequest(t, testBrokerConfig, req, nil)
-	if exit.Code != 2 || !strings.Contains(exit.Error, "unknown field") {
-		t.Errorf("exit = %+v, want code 2 with unknown field error", exit)
+	if exit.Code != 2 || !strings.Contains(exit.Error, "unknown object member") {
+		t.Errorf("exit = %+v, want code 2 with unknown member error", exit)
 	}
 	if len(rec.all()) != 0 {
 		t.Errorf("docker must not run for a rejected request: %q", rec.all())
