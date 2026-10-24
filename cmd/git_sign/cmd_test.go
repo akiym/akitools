@@ -414,3 +414,77 @@ func TestRunSignsEmptyHeadByAmend(t *testing.T) {
 	}
 	assertNotMidRebase(t, repo)
 }
+
+// datedCommit sets the dates only on the commit process: exporting them via
+// t.Setenv would leak into run() and mask a signing step that resets them.
+func datedCommit(t *testing.T, repo, msg, authorDate, committerDate string, extraConfig ...string) {
+	t.Helper()
+	f := filepath.Join(repo, "file.txt")
+	if err := os.WriteFile(f, []byte(msg+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, repo, "add", "file.txt")
+	args := []string{}
+	for _, c := range extraConfig {
+		args = append(args, "-c", c)
+	}
+	cmd := exec.Command("git", append(args, "commit", "-m", msg)...)
+	cmd.Dir = repo
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+authorDate, "GIT_COMMITTER_DATE="+committerDate)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v\n%s", err, out)
+	}
+}
+
+// unpushedDates returns "subject author-date committer-date" lines for
+// origin/main..HEAD in oldest-first order.
+func unpushedDates(t *testing.T, repo string) []string {
+	t.Helper()
+	return strings.Split(git(t, repo, "log", "--reverse", "--format=%s %aI %cI", "origin/main..HEAD"), "\n")
+}
+
+// Signing must not touch the committer date, so a HEAD whose committer date
+// already differs from its author date (e.g. amended earlier) keeps it as is.
+func TestRunAmendPreservesCommitterDate(t *testing.T) {
+	repo := setupRepo(t)
+	datedCommit(t, repo, "head", "2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z")
+
+	if err := run(); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	want := []string{"head 2020-01-01T00:00:00Z 2020-01-02T00:00:00Z"}
+	if got := unpushedDates(t, repo); !slices.Equal(got, want) {
+		t.Errorf("dates = %v, want %v", got, want)
+	}
+	if got := unpushedLog(t, repo); !slices.Equal(got, []string{"G head"}) {
+		t.Errorf("unpushed log = %v", got)
+	}
+}
+
+// The rebase rewrites every commit after the earliest one to sign, including
+// ones it does not sign, so all of them get their committer date pinned to
+// the author date instead of the time of signing.
+func TestRunRebaseSetsCommitterDateToAuthorDate(t *testing.T) {
+	repo := setupRepo(t)
+	datedCommit(t, repo, "first", "2020-01-01T00:00:00Z", "2020-01-11T00:00:00Z")
+	datedCommit(t, repo, "theirs", "2020-01-02T00:00:00Z", "2020-01-12T00:00:00Z", "user.name=Other", "user.email=other@example.com")
+	datedCommit(t, repo, "second", "2020-01-03T00:00:00Z", "2020-01-13T00:00:00Z")
+
+	if err := run(); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	want := []string{
+		"first 2020-01-01T00:00:00Z 2020-01-01T00:00:00Z",
+		"theirs 2020-01-02T00:00:00Z 2020-01-02T00:00:00Z",
+		"second 2020-01-03T00:00:00Z 2020-01-03T00:00:00Z",
+	}
+	if got := unpushedDates(t, repo); !slices.Equal(got, want) {
+		t.Errorf("dates = %v, want %v", got, want)
+	}
+	if got := unpushedLog(t, repo); !slices.Equal(got, []string{"G first", "N theirs", "G second"}) {
+		t.Errorf("unpushed log = %v", got)
+	}
+	assertNotMidRebase(t, repo)
+}

@@ -81,26 +81,30 @@ type commitInfo struct {
 	authorName  string
 	authorEmail string
 	authorDate  string
-	sigStatus   string
-	body        string
+	// committerDate is strict ISO 8601 so it can be fed back verbatim
+	// through GIT_COMMITTER_DATE without losing the original offset.
+	committerDate string
+	sigStatus     string
+	body          string
 }
 
 func getCommitInfo(ref string) (commitInfo, error) {
-	out, err := exec.Command("git", "log", "-1", ref, "--format=%H%n%an%n%ae%n%aD%n%G?%n%B").Output()
+	out, err := exec.Command("git", "log", "-1", ref, "--format=%H%n%an%n%ae%n%aD%n%cI%n%G?%n%B").Output()
 	if err != nil {
 		return commitInfo{}, fmt.Errorf("failed to get commit %s: %w", ref, err)
 	}
-	parts := strings.SplitN(string(out), "\n", 6)
-	if len(parts) < 6 {
+	parts := strings.SplitN(string(out), "\n", 7)
+	if len(parts) < 7 {
 		return commitInfo{}, fmt.Errorf("unexpected git log output for %s", ref)
 	}
 	c := commitInfo{
-		hash:        parts[0],
-		authorName:  parts[1],
-		authorEmail: parts[2],
-		authorDate:  parts[3],
-		sigStatus:   parts[4],
-		body:        strings.TrimRight(parts[5], "\n"),
+		hash:          parts[0],
+		authorName:    parts[1],
+		authorEmail:   parts[2],
+		authorDate:    parts[3],
+		committerDate: parts[4],
+		sigStatus:     parts[5],
+		body:          strings.TrimRight(parts[6], "\n"),
 	}
 	if len(c.hash) >= 7 {
 		c.shortHash = c.hash[:7]
@@ -177,9 +181,11 @@ func hasStagedChanges() (bool, error) {
 // amendSign re-creates HEAD with a signature. The index is known to match
 // HEAD, so --allow-empty only matters for commits that were empty to begin
 // with (e.g. a root `init` commit), which git would otherwise refuse to amend.
-func amendSign() error {
+// The committer date is carried over because amend would otherwise stamp the
+// signing time on it, which GitHub shows as the commit's date.
+func amendSign(c commitInfo) error {
 	amend := exec.Command("git", "commit", "--amend", "--no-edit", "--allow-empty", "-S")
-	amend.Env = append(os.Environ(), "HUSKY=0")
+	amend.Env = append(os.Environ(), "HUSKY=0", "GIT_COMMITTER_DATE="+c.committerDate)
 	amend.Stdin = os.Stdin
 	amend.Stdout = os.Stdout
 	amend.Stderr = os.Stderr
@@ -214,7 +220,7 @@ func runHead() error {
 
 	fmt.Fprintf(os.Stderr, "signing commit %s\n", c.shortHash)
 	printCommit(c)
-	return amendSign()
+	return amendSign(c)
 }
 
 func shellQuote(s string) string {
@@ -282,7 +288,7 @@ func run() error {
 		c := toSign[0]
 		fmt.Fprintf(os.Stderr, "signing commit %s\n", c.shortHash)
 		printCommit(c)
-		return amendSign()
+		return amendSign(c)
 	}
 
 	fmt.Fprintf(os.Stderr, "signing %d commit(s) via rebase:\n", len(toSign))
@@ -300,12 +306,15 @@ func run() error {
 	}
 	execCmd := shellQuote(executable) + " git-sign --head-only"
 
-	var args []string
+	// Commits replayed after the first signed one get rewritten even when
+	// they are not signed themselves; pinning their committer date to the
+	// author date keeps the rebase time out of the history. The --exec amend
+	// then carries that date over for the ones it signs.
+	args := []string{"rebase", "--rebase-merges", "--committer-date-is-author-date", "--exec", execCmd}
 	if parentErr != nil {
-		args = []string{"rebase", "--rebase-merges", "--exec", execCmd, "--root"}
+		args = append(args, "--root")
 	} else {
-		parent := strings.TrimSpace(string(parentOut))
-		args = []string{"rebase", "--rebase-merges", "--exec", execCmd, parent}
+		args = append(args, strings.TrimSpace(string(parentOut)))
 	}
 
 	rebaseCmd := exec.Command("git", args...)
